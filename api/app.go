@@ -147,7 +147,18 @@ func (a *App) GetMediaInfo(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(output), nil
+
+	// Replace full path with just filename in "Complete name" line
+	result := string(output)
+	fileName := filepath.Base(filePath)
+	lines := strings.Split(result, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "Complete name") {
+			lines[i] = "Complete name                            : " + fileName
+			break
+		}
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // CreateTorrent creates a .torrent file for the given source path
