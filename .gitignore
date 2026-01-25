@@ -12,3 +12,6 @@ Thumbs.db
 
 # Old source code
 source/
+
+# Claude memory file (may contain sensitive info)
+CLAUDE_MEMORY.md

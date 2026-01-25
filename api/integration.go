@@ -25,6 +25,7 @@ type ReleaseInfo struct {
 	Source            string   `json:"source"`
 	Codec             string   `json:"codec"`
 	Audio             string   `json:"audio"`
+	AudioCodecs       []string `json:"audioCodecs"`
 	AudioChannels     string   `json:"audioChannels"`
 	Language          string   `json:"language"`
 	AudioLanguages    []string `json:"audioLanguages"`
@@ -446,7 +447,10 @@ func findLocalMatchingTags(characteristics []LocalCharacteristic, info ReleaseIn
 			valuesToCheck = []string{info.Codec}
 			// Fallback: If codec is "x264", maybe tag "AVC/H264/x264" matches
 		case strings.Contains(slug, "codec-audio"):
-			valuesToCheck = []string{info.Audio}
+			valuesToCheck = info.AudioCodecs
+			if len(valuesToCheck) == 0 && info.Audio != "" {
+				valuesToCheck = []string{info.Audio}
+			}
 		case strings.Contains(slug, "langues") || strings.Contains(slug, "langue"):
 			valuesToCheck = info.AudioLanguages
 			if len(valuesToCheck) == 0 && info.Language != "" {

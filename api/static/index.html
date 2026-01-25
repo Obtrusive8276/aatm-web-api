@@ -521,17 +521,23 @@
             if (nfo.match(/Format\s*:\s*Matroska/i)) info.container = 'MKV';
             else if (nfo.match(/Format\s*:\s*MPEG-4/i)) info.container = 'MP4';
 
+            // Résolution : utiliser largeur ET hauteur pour détecter correctement le 4K (films en scope)
+            const widthMatch = nfo.match(/Width\s*:\s*([\d\s]+)/);
             const heightMatch = nfo.match(/Height\s*:\s*([\d\s]+)/);
-            if (heightMatch) {
-                const h = parseInt(heightMatch[1].replace(/\s/g, ''), 10);
-                if (h >= 2100) info.resolution = '2160p';
-                else if (h >= 1000) info.resolution = '1080p';
-                else if (h >= 700) info.resolution = '720p';
+            if (widthMatch || heightMatch) {
+                const w = widthMatch ? parseInt(widthMatch[1].replace(/\s/g, ''), 10) : 0;
+                const h = heightMatch ? parseInt(heightMatch[1].replace(/\s/g, ''), 10) : 0;
+                // 4K si largeur >= 3840 OU hauteur >= 2100
+                if (w >= 3840 || h >= 2100) info.resolution = '2160p';
+                else if (w >= 1920 || h >= 1000) info.resolution = '1080p';
+                else if (w >= 1280 || h >= 700) info.resolution = '720p';
                 else info.resolution = '480p';
             }
 
-            if (nfo.match(/Format\s*:\s*HEVC/i) || nfo.match(/Writing library\s*:\s*x265/i)) info.codec = 'x265';
-            else if (nfo.match(/Format\s*:\s*AVC/i) || nfo.match(/Writing library\s*:\s*x264/i)) info.codec = 'x264';
+            if (nfo.match(/Writing library\s*:\s*x265/i)) info.codec = 'x265';
+            else if (nfo.match(/Format\s*:\s*HEVC/i)) info.codec = 'HEVC';
+            else if (nfo.match(/Writing library\s*:\s*x264/i)) info.codec = 'x264';
+            else if (nfo.match(/Format\s*:\s*AVC/i)) info.codec = 'AVC';
 
             if (nfo.match(/Format\s*:\s*E-AC-3/i)) info.audio = 'EAC3';
             else if (nfo.match(/Format\s*:\s*AC-3/i)) info.audio = 'AC3';
@@ -548,12 +554,91 @@
                 else if (maxCh >= 2) info.audioChannels = '2.0';
             }
 
-            const audioLangs = new Set();
-            const subLangs = new Set();
+            const audioTracks = [];
+            const subtitleTracks = [];
             const sections = nfo.split(/(?:\r?\n){2,}/);
             let frenchAudio = false, nonFrenchAudio = false;
 
+            // Fonction pour nettoyer et normaliser les langues
+            const normalizeLang = (lang) => {
+                lang = lang.trim();
+                const match = lang.match(/^([\w\-]+)/i);
+                if (match) {
+                    const base = match[1].toLowerCase();
+                    if (base === 'french' || base === 'français') return 'Français';
+                    if (base === 'english') return 'Anglais';
+                    if (base === 'spanish' || base === 'español') return 'Espagnol';
+                    if (base === 'german' || base === 'deutsch') return 'Allemand';
+                    if (base === 'italian' || base === 'italiano') return 'Italien';
+                    if (base === 'portuguese') return 'Portugais';
+                    if (base === 'japanese') return 'Japonais';
+                    if (base === 'korean') return 'Coréen';
+                    if (base === 'chinese') return 'Chinois';
+                    if (base === 'russian') return 'Russe';
+                    if (base === 'arabic') return 'Arabe';
+                }
+                return lang;
+            };
+
+            // Fonction pour obtenir le codec audio avec nom commercial
+            const getAudioCodec = (section) => {
+                let codec = '';
+                let commercial = '';
+
+                const formatMatch = section.match(/Format\s*:\s*([^\r\n]+)/i);
+                if (formatMatch) {
+                    const fmt = formatMatch[1].trim();
+                    if (fmt.match(/E-AC-3/i)) codec = 'EAC3';
+                    else if (fmt.match(/AC-3/i)) codec = 'AC3';
+                    else if (fmt.match(/DTS-HD MA/i)) codec = 'DTS-HD MA';
+                    else if (fmt.match(/DTS-HD/i)) codec = 'DTS-HD';
+                    else if (fmt.match(/DTS/i)) codec = 'DTS';
+                    else if (fmt.match(/TrueHD|MLP\s*FBA/i)) codec = 'TrueHD';
+                    else if (fmt.match(/AAC/i)) codec = 'AAC';
+                    else if (fmt.match(/FLAC/i)) codec = 'FLAC';
+                    else if (fmt.match(/Opus/i)) codec = 'Opus';
+                    else if (fmt.match(/MP3|MPEG Audio/i)) codec = 'MP3';
+                    else if (fmt.match(/PCM/i)) codec = 'PCM';
+                    else codec = fmt;
+                }
+
+                const commercialMatch = section.match(/Commercial name\s*:\s*([^\r\n]+)/i);
+                if (commercialMatch) {
+                    commercial = commercialMatch[1].trim();
+                }
+
+                return commercial ? `${codec} (${commercial})` : codec;
+            };
+
+            // Fonction pour obtenir les canaux audio
+            const getAudioChannels = (section) => {
+                const channelMatch = section.match(/Channel\(s\)\s*:\s*(\d+)/i);
+                if (channelMatch) {
+                    const ch = parseInt(channelMatch[1], 10);
+                    if (ch >= 8) return '7.1';
+                    if (ch >= 6) return '5.1';
+                    if (ch >= 2) return '2.0';
+                    return '1.0';
+                }
+                return '';
+            };
+
+            // Fonction pour obtenir le bitrate
+            const getBitrate = (section) => {
+                const bitrateMatch = section.match(/Bit rate\s*:\s*([^\r\n]+)/i);
+                if (bitrateMatch) {
+                    return bitrateMatch[1].trim();
+                }
+                return '';
+            };
+
             for (const s of sections) {
+                // Extraire le bitrate vidéo de la section Video
+                const videoHeader = s.match(/^Video\s*(?:#\d+)?/im);
+                if (videoHeader && !info.videoBitrate) {
+                    const bitrate = getBitrate(s);
+                    if (bitrate) info.videoBitrate = bitrate;
+                }
                 const audioHeader = s.match(/^Audio\s*(?:#\d+)?/im);
                 const textHeader = s.match(/^(?:Text|Subtitle)\s*(?:#\d+)?/im);
                 const hasAudioProps = s.includes('Channel(s)') && s.includes('Sampling rate');
@@ -561,20 +646,79 @@
                 if (audioHeader || (!textHeader && hasAudioProps)) {
                     const langMatch = s.match(/Language\s*:\s*([^\r\n]+)/i);
                     if (langMatch) {
-                        const lang = langMatch[1].trim();
-                        audioLangs.add(lang);
+                        const lang = normalizeLang(langMatch[1]);
+                        const codec = getAudioCodec(s);
+                        const channels = getAudioChannels(s);
+                        const bitrate = getBitrate(s);
+
+                        audioTracks.push({
+                            language: lang,
+                            codec: codec,
+                            channels: channels,
+                            bitrate: bitrate
+                        });
+
                         const lowerLang = lang.toLowerCase();
-                        if (lowerLang.includes('french') || lowerLang.includes('français')) frenchAudio = true;
+                        if (lowerLang.includes('français') || lowerLang.includes('french')) frenchAudio = true;
                         else nonFrenchAudio = true;
                     }
                 } else if (textHeader) {
                     const langMatch = s.match(/Language\s*:\s*([^\r\n]+)/i);
-                    if (langMatch) subLangs.add(langMatch[1].trim());
+                    const titleMatch = s.match(/Title\s*:\s*([^\r\n]+)/i);
+                    const formatMatch = s.match(/Format\s*:\s*([^\r\n]+)/i);
+                    if (langMatch) {
+                        const lang = normalizeLang(langMatch[1]);
+                        const title = titleMatch ? titleMatch[1].trim() : '';
+                        const fmt = formatMatch ? formatMatch[1].trim().toUpperCase() : '';
+
+                        // Déterminer le type de sous-titre
+                        let subType = '';
+                        if (title.toLowerCase().includes('forced')) subType = 'Forcés';
+                        else if (title.toLowerCase().includes('sdh')) subType = 'SDH';
+                        else if (title.toLowerCase().includes('full')) subType = 'Complet';
+
+                        // Déterminer le format (SRT ou PGS)
+                        let subFormat = '';
+                        if (fmt.includes('UTF-8') || fmt.includes('SRT') || fmt.includes('ASS') || fmt.includes('SSA')) {
+                            subFormat = 'SRT';
+                        } else if (fmt.includes('PGS') || fmt.includes('HDMV')) {
+                            subFormat = 'PGS';
+                        }
+
+                        // Construire le suffixe
+                        let suffix = '';
+                        if (subType && subFormat) suffix = ` (${subType} ${subFormat})`;
+                        else if (subType) suffix = ` (${subType})`;
+                        else if (subFormat) suffix = ` (${subFormat})`;
+
+                        subtitleTracks.push(lang + suffix);
+                    }
                 }
             }
 
-            if (audioLangs.size > 0) info.audioLanguages = Array.from(audioLangs);
-            if (subLangs.size > 0) info.subtitleLanguages = Array.from(subLangs);
+            if (audioTracks.length > 0) {
+                info.audioTracks = audioTracks;
+                info.audioLanguages = audioTracks.map(t => t.language);
+                // Extraire les codecs audio uniques pour les tags
+                const uniqueCodecs = new Set();
+                audioTracks.forEach(t => {
+                    if (t.codec) {
+                        // Extraire le codec de base (avant la parenthèse)
+                        const baseCodec = t.codec.split(' (')[0].trim();
+                        // Vérifier si c'est Atmos
+                        const isAtmos = t.codec.toLowerCase().includes('atmos');
+                        if (isAtmos) {
+                            if (baseCodec.includes('TrueHD')) uniqueCodecs.add('TrueHD Atmos');
+                            else if (baseCodec.includes('EAC3') || baseCodec.includes('E-AC-3')) uniqueCodecs.add('E-AC3 Atmos');
+                            else uniqueCodecs.add(baseCodec + ' Atmos');
+                        } else {
+                            uniqueCodecs.add(baseCodec);
+                        }
+                    }
+                });
+                info.audioCodecs = Array.from(uniqueCodecs);
+            }
+            if (subtitleTracks.length > 0) info.subtitleLanguages = subtitleTracks;
             if (frenchAudio && nonFrenchAudio) info.language = 'MULTi';
             else if (frenchAudio) info.language = 'FRENCH';
 
@@ -684,24 +828,41 @@
                 if (sizeMatch) size = sizeMatch[1];
             }
 
-            // Récupérer toutes les langues audio
-            let audioLangs = "Non spécifié";
-            if (releaseInfo.audioLanguages && releaseInfo.audioLanguages.length > 0) {
-                audioLangs = releaseInfo.audioLanguages.join(", ");
-            } else if (releaseInfo.language) {
-                audioLangs = releaseInfo.language;
+            // Générer la liste des pistes audio avec codec, nom commercial, canaux et bitrate
+            let audioSection = "";
+            if (releaseInfo.audioTracks && releaseInfo.audioTracks.length > 0) {
+                const audioLines = releaseInfo.audioTracks.map(track => {
+                    let line = track.language;
+                    if (track.codec) line += ` : ${track.codec}`;
+                    if (track.channels) line += ` ${track.channels}`;
+                    if (track.bitrate) line += ` @ ${track.bitrate}`;
+                    return line;
+                });
+                audioSection = audioLines.join("\n");
+            } else if (releaseInfo.audioLanguages && releaseInfo.audioLanguages.length > 0) {
+                const audio = releaseInfo.audio || "";
+                const channels = releaseInfo.audioChannels || "";
+                audioSection = releaseInfo.audioLanguages.map(lang => {
+                    let line = lang;
+                    if (audio) line += ` : ${audio}`;
+                    if (channels) line += ` ${channels}`;
+                    return line;
+                }).join("\n");
+            } else {
+                audioSection = releaseInfo.language || "Non spécifié";
             }
 
             // Récupérer tous les sous-titres
-            let subs = "Aucun";
+            let subsSection = "Aucun";
             if (releaseInfo.subtitleLanguages && releaseInfo.subtitleLanguages.length > 0) {
-                subs = releaseInfo.subtitleLanguages.join(", ");
+                subsSection = releaseInfo.subtitleLanguages.join("\n");
             }
 
             const resolution = releaseInfo.resolution || "Non spécifié";
             const container = releaseInfo.container || "MKV";
             const video = releaseInfo.codec || "Non spécifié";
-            const audio = releaseInfo.audio || "Non spécifié";
+            const videoBitrate = releaseInfo.videoBitrate || "";
+            const hdr = (releaseInfo.hdr && releaseInfo.hdr.length > 0) ? releaseInfo.hdr.join(" / ") : "";
 
             return `[center]
 [img]${posterUrl}[/img]
@@ -715,12 +876,13 @@
 
 [color=#eab308][b]--- DÉTAILS ---[/b][/color]
 
-[b]Qualité :[/b] ${resolution}
+[b]Qualité :[/b] ${resolution}${hdr ? ` ${hdr}` : ''}
 [b]Format :[/b] ${container}
-[b]Codec Vidéo :[/b] ${video}
-[b]Codec Audio :[/b] ${audio}
-[b]Langues :[/b] ${audioLangs}
-[b]Sous-titres :[/b] ${subs}
+[b]Codec Vidéo :[/b] ${video}${videoBitrate ? ` @ ${videoBitrate}` : ''}
+[b]Audio :[/b]
+${audioSection}
+[b]Sous-titres :[/b]
+${subsSection}
 [b]Taille :[/b] ${size}
 
 
@@ -1403,6 +1565,7 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
 
                 // Create hardlink if enabled
                 let hardlinkPath = null;
+                let hardlinkError = null;
                 if (state.settings.enableHardlink && state.settings.hardlinkDirs && state.settings.hardlinkDirs.length > 0) {
                     try {
                         const hardlinkRes = await fetch(`${API_BASE}/api/hardlink/create`, {
@@ -1416,8 +1579,12 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                         if (hardlinkRes.ok) {
                             const hardlinkData = await hardlinkRes.json();
                             hardlinkPath = hardlinkData.hardlinkPath;
+                        } else {
+                            hardlinkError = await hardlinkRes.text();
+                            console.warn('Hardlink creation failed:', hardlinkError);
                         }
                     } catch (hlErr) {
+                        hardlinkError = hlErr.message;
                         console.warn('Hardlink creation failed:', hlErr);
                     }
                 }
@@ -1433,6 +1600,8 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 document.getElementById('creationResult').classList.remove('hidden');
                 let successMsg = 'Torrent et NFO crees avec succes!';
                 if (hardlinkPath) successMsg += `<br><small>Hardlink: ${hardlinkPath}</small>`;
+                else if (hardlinkError) successMsg += `<br><small style="color: var(--warning-text);">Hardlink échoué: ${hardlinkError}</small>`;
+                else if (state.settings.enableHardlink) successMsg += `<br><small style="color: var(--warning-text);">Hardlink: aucun répertoire configuré sur le même disque</small>`;
                 document.getElementById('creationResult').innerHTML = `<div class="alert alert-success">${successMsg}</div>`;
                 showToast('Torrent cree!', 'success');
                 setTimeout(() => goToStep(5), 1000);
