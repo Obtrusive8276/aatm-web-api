@@ -430,10 +430,36 @@
                             </div>
                         </div>
                         <div class="settings-section">
-                            <h3>qBittorrent</h3>
-                            <div class="form-group"><label>URL</label><input type="text" class="form-control" id="settingQbitUrl" placeholder="http://localhost:8080"></div>
-                            <div class="form-group"><label>Nom d'utilisateur</label><input type="text" class="form-control" id="settingQbitUsername" placeholder="admin"></div>
-                            <div class="form-group"><label>Mot de passe</label><input type="password" class="form-control" id="settingQbitPassword"></div>
+                            <h3>Client Torrent</h3>
+                            <div class="form-group">
+                                <label>Client pour l'ajout des torrents</label>
+                                <select class="form-control" id="settingTorrentClient" onchange="toggleTorrentClientSettings()">
+                                    <option value="qbittorrent">qBittorrent</option>
+                                    <option value="transmission">Transmission</option>
+                                    <option value="deluge">Deluge</option>
+                                    <option value="none">Aucun (ne pas ajouter)</option>
+                                </select>
+                            </div>
+                            <!-- qBittorrent Settings -->
+                            <div id="qbittorrentSettings" class="client-settings">
+                                <h4 style="margin-top:15px;color:var(--text-muted);">qBittorrent</h4>
+                                <div class="form-group"><label>URL</label><input type="text" class="form-control" id="settingQbitUrl" placeholder="http://localhost:8080"></div>
+                                <div class="form-group"><label>Nom d'utilisateur</label><input type="text" class="form-control" id="settingQbitUsername" placeholder="admin"></div>
+                                <div class="form-group"><label>Mot de passe</label><input type="password" class="form-control" id="settingQbitPassword"></div>
+                            </div>
+                            <!-- Transmission Settings -->
+                            <div id="transmissionSettings" class="client-settings" style="display:none;">
+                                <h4 style="margin-top:15px;color:var(--text-muted);">Transmission</h4>
+                                <div class="form-group"><label>URL</label><input type="text" class="form-control" id="settingTransmissionUrl" placeholder="http://localhost:9091"></div>
+                                <div class="form-group"><label>Nom d'utilisateur</label><input type="text" class="form-control" id="settingTransmissionUsername"></div>
+                                <div class="form-group"><label>Mot de passe</label><input type="password" class="form-control" id="settingTransmissionPassword"></div>
+                            </div>
+                            <!-- Deluge Settings -->
+                            <div id="delugeSettings" class="client-settings" style="display:none;">
+                                <h4 style="margin-top:15px;color:var(--text-muted);">Deluge</h4>
+                                <div class="form-group"><label>URL</label><input type="text" class="form-control" id="settingDelugeUrl" placeholder="http://localhost:8112"></div>
+                                <div class="form-group"><label>Mot de passe</label><input type="password" class="form-control" id="settingDelugePassword" placeholder="deluge"></div>
+                            </div>
                         </div>
                         <div class="settings-section">
                             <h3>La-Cale</h3>
@@ -1615,27 +1641,43 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             }
         }
 
-        async function uploadToQBittorrent() {
+        async function uploadToTorrentClient() {
             const statusEl = document.getElementById('uploadStatus');
-            statusEl.innerHTML = '<div class="loading"><div class="spinner"></div>Upload qBittorrent...</div>';
+            const clientName = state.settings.torrentClient || 'qbittorrent';
+            if (clientName === 'none') {
+                statusEl.innerHTML = '<div class="alert alert-info">Aucun client torrent configure - etape ignoree</div>';
+                return;
+            }
+            const clientDisplayNames = {
+                'qbittorrent': 'qBittorrent',
+                'transmission': 'Transmission',
+                'deluge': 'Deluge'
+            };
+            const displayName = clientDisplayNames[clientName] || clientName;
+            statusEl.innerHTML = `<div class="loading"><div class="spinner"></div>Upload vers ${displayName}...</div>`;
             try {
-                const res = await fetch(`${API_BASE}/api/qbittorrent/upload`, {
+                const res = await fetch(`${API_BASE}/api/torrent-client/upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        torrentPath: state.createdTorrentPath,
-                        qbitUrl: state.settings.qbitUrl || 'http://localhost:8081',
-                        username: state.settings.qbitUsername || 'admin',
-                        password: state.settings.qbitPassword || 'adminadmin'
+                        torrentPath: state.createdTorrentPath
                     })
                 });
-                if (!res.ok) throw new Error('Erreur upload qBittorrent');
-                statusEl.innerHTML = '<div class="alert alert-success">Upload qBittorrent reussi!</div>';
-                showToast('Upload qBittorrent OK!', 'success');
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || `Erreur upload ${displayName}`);
+                }
+                statusEl.innerHTML = `<div class="alert alert-success">Upload ${displayName} reussi!</div>`;
+                showToast(`Upload ${displayName} OK!`, 'success');
             } catch (e) {
                 statusEl.innerHTML = `<div class="alert alert-danger">Erreur: ${e.message}</div>`;
                 showToast('Erreur: ' + e.message, 'error');
             }
+        }
+
+        // Alias pour compatibilite
+        async function uploadToQBittorrent() {
+            return uploadToTorrentClient();
         }
 
         async function uploadToLaCale() {
@@ -1697,7 +1739,10 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             btn.disabled = true;
             btn.textContent = 'Upload en cours...';
 
-            // Upload to La-Cale first
+            // Upload to torrent client first (qBittorrent, Transmission, Deluge)
+            await uploadToTorrentClient();
+
+            // Then upload to La-Cale
             await uploadToLaCale();
 
             // Reset state
@@ -1732,15 +1777,35 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
         function loadSettingsForm() {
             document.getElementById('settingRootPath').value = state.settings.rootPath || '/media';
             document.getElementById('settingTrackers').value = state.settings.torrentTrackers || '';
+            // Torrent client selection
+            document.getElementById('settingTorrentClient').value = state.settings.torrentClient || 'qbittorrent';
+            // qBittorrent
             document.getElementById('settingQbitUrl').value = state.settings.qbitUrl || 'http://localhost:8081';
             document.getElementById('settingQbitUsername').value = state.settings.qbitUsername || 'admin';
             document.getElementById('settingQbitPassword').value = state.settings.qbitPassword || '';
+            // Transmission
+            document.getElementById('settingTransmissionUrl').value = state.settings.transmissionUrl || 'http://localhost:9091';
+            document.getElementById('settingTransmissionUsername').value = state.settings.transmissionUsername || '';
+            document.getElementById('settingTransmissionPassword').value = state.settings.transmissionPassword || '';
+            // Deluge
+            document.getElementById('settingDelugeUrl').value = state.settings.delugeUrl || 'http://localhost:8112';
+            document.getElementById('settingDelugePassword').value = state.settings.delugePassword || 'deluge';
+            // La-Cale
             document.getElementById('settingLaCaleEmail').value = state.settings.laCaleEmail || '';
             document.getElementById('settingLaCalePassword').value = state.settings.laCalePassword || '';
             document.getElementById('settingLaCalePasskey').value = state.settings.passkey || '';
             document.getElementById('settingEnableHardlink').checked = state.settings.enableHardlink || false;
             document.getElementById('settingHardlinkDirs').value = (state.settings.hardlinkDirs || []).join('\n');
             document.getElementById('settingShowProcessed').checked = state.settings.showProcessed || false;
+            // Toggle visibility
+            toggleTorrentClientSettings();
+        }
+
+        function toggleTorrentClientSettings() {
+            const client = document.getElementById('settingTorrentClient').value;
+            document.getElementById('qbittorrentSettings').style.display = client === 'qbittorrent' ? 'block' : 'none';
+            document.getElementById('transmissionSettings').style.display = client === 'transmission' ? 'block' : 'none';
+            document.getElementById('delugeSettings').style.display = client === 'deluge' ? 'block' : 'none';
         }
 
         async function saveSettings() {
@@ -1750,9 +1815,20 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             const settings = {
                 rootPath: document.getElementById('settingRootPath').value,
                 torrentTrackers: document.getElementById('settingTrackers').value,
+                // Torrent client
+                torrentClient: document.getElementById('settingTorrentClient').value,
+                // qBittorrent
                 qbitUrl: document.getElementById('settingQbitUrl').value,
                 qbitUsername: document.getElementById('settingQbitUsername').value,
                 qbitPassword: document.getElementById('settingQbitPassword').value,
+                // Transmission
+                transmissionUrl: document.getElementById('settingTransmissionUrl').value,
+                transmissionUsername: document.getElementById('settingTransmissionUsername').value,
+                transmissionPassword: document.getElementById('settingTransmissionPassword').value,
+                // Deluge
+                delugeUrl: document.getElementById('settingDelugeUrl').value,
+                delugePassword: document.getElementById('settingDelugePassword').value,
+                // La-Cale
                 laCaleEmail: document.getElementById('settingLaCaleEmail').value,
                 laCalePassword: document.getElementById('settingLaCalePassword').value,
                 passkey: document.getElementById('settingLaCalePasskey').value,

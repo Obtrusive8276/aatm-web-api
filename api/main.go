@@ -202,6 +202,43 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 	})
 
+	// Generic torrent client integration (uses settings to determine which client)
+	r.Post("/api/torrent-client/upload", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			TorrentPath string `json:"torrentPath"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		settings := app.GetSettings()
+		err := app.UploadToTorrentClient(req.TorrentPath, settings)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "uploaded", "client": settings.TorrentClient})
+	})
+
+	r.Post("/api/torrent-client/remove", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			TorrentPath string `json:"torrentPath"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		settings := app.GetSettings()
+		err := app.RemoveFromTorrentClient(req.TorrentPath, settings)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "client": settings.TorrentClient})
+	})
+
 	// Hardlink creation
 	r.Post("/api/hardlink/create", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

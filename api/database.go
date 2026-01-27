@@ -20,13 +20,24 @@ type AppSettings struct {
 	Passkey          string   `json:"passkey"`
 	LaCaleEmail      string   `json:"laCaleEmail"`
 	LaCalePassword   string   `json:"laCalePassword"`
-	QbitUrl          string   `json:"qbitUrl"`
-	QbitUsername     string   `json:"qbitUsername"`
-	QbitPassword     string   `json:"qbitPassword"`
-	ShowProcessed    bool     `json:"showProcessed"`
-	ShowNotProcessed bool     `json:"showNotProcessed"`
-	IsFullAuto       bool     `json:"isFullAuto"`
-	EnableHardlink   bool     `json:"enableHardlink"`
+	// Torrent client selection: "qbittorrent", "transmission", "deluge", "none"
+	TorrentClient string `json:"torrentClient"`
+	// qBittorrent settings
+	QbitUrl      string `json:"qbitUrl"`
+	QbitUsername string `json:"qbitUsername"`
+	QbitPassword string `json:"qbitPassword"`
+	// Transmission settings
+	TransmissionUrl      string `json:"transmissionUrl"`
+	TransmissionUsername string `json:"transmissionUsername"`
+	TransmissionPassword string `json:"transmissionPassword"`
+	// Deluge settings
+	DelugeUrl      string `json:"delugeUrl"`
+	DelugePassword string `json:"delugePassword"`
+	// Display settings
+	ShowProcessed    bool `json:"showProcessed"`
+	ShowNotProcessed bool `json:"showNotProcessed"`
+	IsFullAuto       bool `json:"isFullAuto"`
+	EnableHardlink   bool `json:"enableHardlink"`
 	HardlinkDirs     []string `json:"hardlinkDirs"`
 }
 
@@ -98,6 +109,9 @@ func (a *App) GetSettings() AppSettings {
 	if settings.RootPath == "" {
 		settings.RootPath = defaults.RootPath
 	}
+	if settings.TorrentClient == "" {
+		settings.TorrentClient = defaults.TorrentClient
+	}
 	if settings.QbitUrl == "" {
 		settings.QbitUrl = defaults.QbitUrl
 	}
@@ -107,20 +121,35 @@ func (a *App) GetSettings() AppSettings {
 	if settings.QbitPassword == "" {
 		settings.QbitPassword = defaults.QbitPassword
 	}
+	if settings.TransmissionUrl == "" {
+		settings.TransmissionUrl = defaults.TransmissionUrl
+	}
+	if settings.DelugeUrl == "" {
+		settings.DelugeUrl = defaults.DelugeUrl
+	}
+	if settings.DelugePassword == "" {
+		settings.DelugePassword = defaults.DelugePassword
+	}
 	return settings
 }
 
 // getDefaultSettings returns the default application settings
 func getDefaultSettings() AppSettings {
 	return AppSettings{
-		RootPath:         "/host",
-		TorrentTrackers:  "",
-		IsPrivateTorrent: true,
-		QbitUrl:          "http://localhost:8081",
-		QbitUsername:     "admin",
-		QbitPassword:     "adminadmin",
-		ShowProcessed:    false,
-		ShowNotProcessed: true,
+		RootPath:             "/host",
+		TorrentTrackers:      "",
+		IsPrivateTorrent:     true,
+		TorrentClient:        "qbittorrent",
+		QbitUrl:              "http://localhost:8081",
+		QbitUsername:         "admin",
+		QbitPassword:         "adminadmin",
+		TransmissionUrl:      "http://localhost:9091",
+		TransmissionUsername: "",
+		TransmissionPassword: "",
+		DelugeUrl:            "http://localhost:8112",
+		DelugePassword:       "deluge",
+		ShowProcessed:        false,
+		ShowNotProcessed:     true,
 	}
 }
 

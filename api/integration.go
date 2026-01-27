@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -572,4 +574,385 @@ func findLocalMatchingTags(characteristics []LocalCharacteristic, info ReleaseIn
 	}
 
 	return matched
+}
+
+// ==================== TRANSMISSION INTEGRATION ====================
+
+// TransmissionRPCRequest represents a Transmission RPC request
+type TransmissionRPCRequest struct {
+	Method    string      `json:"method"`
+	Arguments interface{} `json:"arguments,omitempty"`
+}
+
+// TransmissionRPCResponse represents a Transmission RPC response
+type TransmissionRPCResponse struct {
+	Result    string                 `json:"result"`
+	Arguments map[string]interface{} `json:"arguments,omitempty"`
+}
+
+// UploadToTransmission uploads a torrent to Transmission via RPC
+func (a *App) UploadToTransmission(torrentPath string, transmissionUrl string, username string, password string) error {
+	if transmissionUrl == "" {
+		return fmt.Errorf("Transmission URL is not configured")
+	}
+
+	transmissionUrl = strings.TrimSuffix(transmissionUrl, "/")
+	rpcUrl := transmissionUrl + "/transmission/rpc"
+
+	// Read torrent file and encode to base64
+	torrentData, err := os.ReadFile(torrentPath)
+	if err != nil {
+		return fmt.Errorf("failed to read torrent file: %w", err)
+	}
+	b64Torrent := base64.StdEncoding.EncodeToString(torrentData)
+
+	client := &http.Client{}
+	sessionId := ""
+
+	// Helper to make RPC request
+	makeRequest := func(req TransmissionRPCRequest) (*TransmissionRPCResponse, error) {
+		body, _ := json.Marshal(req)
+		httpReq, err := http.NewRequest("POST", rpcUrl, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if sessionId != "" {
+			httpReq.Header.Set("X-Transmission-Session-Id", sessionId)
+		}
+		if username != "" {
+			httpReq.SetBasicAuth(username, password)
+		}
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		// Handle CSRF token
+		if resp.StatusCode == 409 {
+			sessionId = resp.Header.Get("X-Transmission-Session-Id")
+			return nil, fmt.Errorf("retry with session id")
+		}
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
+		}
+
+		var rpcResp TransmissionRPCResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return nil, err
+		}
+		return &rpcResp, nil
+	}
+
+	addReq := TransmissionRPCRequest{
+		Method: "torrent-add",
+		Arguments: map[string]interface{}{
+			"metainfo": b64Torrent,
+		},
+	}
+
+	// First attempt (will likely fail to get session ID)
+	resp, err := makeRequest(addReq)
+	if err != nil && strings.Contains(err.Error(), "retry with session id") {
+		// Retry with session ID
+		resp, err = makeRequest(addReq)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to add torrent to Transmission: %w", err)
+	}
+
+	if resp.Result != "success" {
+		return fmt.Errorf("Transmission returned: %s", resp.Result)
+	}
+
+	return nil
+}
+
+// RemoveFromTransmission removes a torrent from Transmission
+func (a *App) RemoveFromTransmission(torrentPath string, transmissionUrl string, username string, password string) error {
+	if transmissionUrl == "" {
+		return nil
+	}
+
+	// Get info hash
+	mi, err := metainfo.LoadFromFile(torrentPath)
+	if err != nil {
+		return fmt.Errorf("failed to load torrent file: %w", err)
+	}
+	infoHash := mi.HashInfoBytes().HexString()
+
+	transmissionUrl = strings.TrimSuffix(transmissionUrl, "/")
+	rpcUrl := transmissionUrl + "/transmission/rpc"
+
+	client := &http.Client{}
+	sessionId := ""
+
+	makeRequest := func(req TransmissionRPCRequest) (*TransmissionRPCResponse, error) {
+		body, _ := json.Marshal(req)
+		httpReq, err := http.NewRequest("POST", rpcUrl, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if sessionId != "" {
+			httpReq.Header.Set("X-Transmission-Session-Id", sessionId)
+		}
+		if username != "" {
+			httpReq.SetBasicAuth(username, password)
+		}
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 409 {
+			sessionId = resp.Header.Get("X-Transmission-Session-Id")
+			return nil, fmt.Errorf("retry with session id")
+		}
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
+		}
+
+		var rpcResp TransmissionRPCResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return nil, err
+		}
+		return &rpcResp, nil
+	}
+
+	removeReq := TransmissionRPCRequest{
+		Method: "torrent-remove",
+		Arguments: map[string]interface{}{
+			"ids":               []string{infoHash},
+			"delete-local-data": false,
+		},
+	}
+
+	resp, err := makeRequest(removeReq)
+	if err != nil && strings.Contains(err.Error(), "retry with session id") {
+		resp, err = makeRequest(removeReq)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to remove torrent from Transmission: %w", err)
+	}
+
+	if resp.Result != "success" {
+		return fmt.Errorf("Transmission returned: %s", resp.Result)
+	}
+
+	return nil
+}
+
+// ==================== DELUGE INTEGRATION ====================
+
+// DelugeRPCRequest represents a Deluge JSON-RPC request
+type DelugeRPCRequest struct {
+	Method string        `json:"method"`
+	Params []interface{} `json:"params"`
+	ID     int           `json:"id"`
+}
+
+// DelugeRPCResponse represents a Deluge JSON-RPC response
+type DelugeRPCResponse struct {
+	Result interface{} `json:"result"`
+	Error  interface{} `json:"error"`
+	ID     int         `json:"id"`
+}
+
+// UploadToDeluge uploads a torrent to Deluge via JSON-RPC
+func (a *App) UploadToDeluge(torrentPath string, delugeUrl string, password string) error {
+	if delugeUrl == "" {
+		return fmt.Errorf("Deluge URL is not configured")
+	}
+
+	delugeUrl = strings.TrimSuffix(delugeUrl, "/")
+	rpcUrl := delugeUrl + "/json"
+
+	// Read and encode torrent
+	torrentData, err := os.ReadFile(torrentPath)
+	if err != nil {
+		return fmt.Errorf("failed to read torrent file: %w", err)
+	}
+	b64Torrent := base64.StdEncoding.EncodeToString(torrentData)
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	requestId := 1
+
+	makeRequest := func(method string, params []interface{}) (*DelugeRPCResponse, error) {
+		req := DelugeRPCRequest{
+			Method: method,
+			Params: params,
+			ID:     requestId,
+		}
+		requestId++
+
+		body, _ := json.Marshal(req)
+		httpReq, err := http.NewRequest("POST", rpcUrl, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		var rpcResp DelugeRPCResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return nil, err
+		}
+		if rpcResp.Error != nil {
+			return nil, fmt.Errorf("Deluge error: %v", rpcResp.Error)
+		}
+		return &rpcResp, nil
+	}
+
+	// 1. Login
+	_, err = makeRequest("auth.login", []interface{}{password})
+	if err != nil {
+		return fmt.Errorf("Deluge login failed: %w", err)
+	}
+
+	// 2. Check connection (optional but recommended)
+	connResp, err := makeRequest("web.connected", []interface{}{})
+	if err != nil {
+		return fmt.Errorf("failed to check Deluge connection: %w", err)
+	}
+	if connResp.Result == false {
+		// Try to connect to first available host
+		hostsResp, _ := makeRequest("web.get_hosts", []interface{}{})
+		if hosts, ok := hostsResp.Result.([]interface{}); ok && len(hosts) > 0 {
+			if host, ok := hosts[0].([]interface{}); ok && len(host) > 0 {
+				makeRequest("web.connect", []interface{}{host[0]})
+			}
+		}
+	}
+
+	// 3. Add torrent
+	filename := filepath.Base(torrentPath)
+	_, err = makeRequest("web.add_torrents", []interface{}{
+		[]map[string]interface{}{
+			{
+				"path":    filename,
+				"options": map[string]interface{}{},
+			},
+		},
+	})
+	// Alternative method: core.add_torrent_file
+	_, err = makeRequest("core.add_torrent_file", []interface{}{
+		filename,
+		b64Torrent,
+		map[string]interface{}{},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add torrent to Deluge: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveFromDeluge removes a torrent from Deluge
+func (a *App) RemoveFromDeluge(torrentPath string, delugeUrl string, password string) error {
+	if delugeUrl == "" {
+		return nil
+	}
+
+	// Get info hash
+	mi, err := metainfo.LoadFromFile(torrentPath)
+	if err != nil {
+		return fmt.Errorf("failed to load torrent file: %w", err)
+	}
+	infoHash := strings.ToLower(mi.HashInfoBytes().HexString())
+
+	delugeUrl = strings.TrimSuffix(delugeUrl, "/")
+	rpcUrl := delugeUrl + "/json"
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	requestId := 1
+
+	makeRequest := func(method string, params []interface{}) (*DelugeRPCResponse, error) {
+		req := DelugeRPCRequest{
+			Method: method,
+			Params: params,
+			ID:     requestId,
+		}
+		requestId++
+
+		body, _ := json.Marshal(req)
+		httpReq, err := http.NewRequest("POST", rpcUrl, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		var rpcResp DelugeRPCResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return nil, err
+		}
+		return &rpcResp, nil
+	}
+
+	// Login
+	_, err = makeRequest("auth.login", []interface{}{password})
+	if err != nil {
+		return fmt.Errorf("Deluge login failed: %w", err)
+	}
+
+	// Remove torrent (false = don't delete data)
+	_, err = makeRequest("core.remove_torrent", []interface{}{infoHash, false})
+	if err != nil {
+		return fmt.Errorf("failed to remove torrent from Deluge: %w", err)
+	}
+
+	return nil
+}
+
+// ==================== GENERIC TORRENT CLIENT DISPATCHER ====================
+
+// UploadToTorrentClient uploads a torrent to the configured client
+func (a *App) UploadToTorrentClient(torrentPath string, settings AppSettings) error {
+	switch settings.TorrentClient {
+	case "qbittorrent":
+		return a.UploadToQBittorrent(torrentPath, settings.QbitUrl, settings.QbitUsername, settings.QbitPassword)
+	case "transmission":
+		return a.UploadToTransmission(torrentPath, settings.TransmissionUrl, settings.TransmissionUsername, settings.TransmissionPassword)
+	case "deluge":
+		return a.UploadToDeluge(torrentPath, settings.DelugeUrl, settings.DelugePassword)
+	case "none", "":
+		return nil // No client configured, skip upload
+	default:
+		return fmt.Errorf("unknown torrent client: %s", settings.TorrentClient)
+	}
+}
+
+// RemoveFromTorrentClient removes a torrent from the configured client
+func (a *App) RemoveFromTorrentClient(torrentPath string, settings AppSettings) error {
+	switch settings.TorrentClient {
+	case "qbittorrent":
+		return a.RemoveFromQBittorrent(torrentPath, settings.QbitUrl, settings.QbitUsername, settings.QbitPassword)
+	case "transmission":
+		return a.RemoveFromTransmission(torrentPath, settings.TransmissionUrl, settings.TransmissionUsername, settings.TransmissionPassword)
+	case "deluge":
+		return a.RemoveFromDeluge(torrentPath, settings.DelugeUrl, settings.DelugePassword)
+	case "none", "":
+		return nil
+	default:
+		return fmt.Errorf("unknown torrent client: %s", settings.TorrentClient)
+	}
 }
