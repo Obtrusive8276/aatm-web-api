@@ -177,7 +177,7 @@ func (a *App) UploadToQBittorrent(torrentPath string, qbitUrl string, username s
 		return err
 	}
 
-	// Force le démarrage automatique du torrent
+	// Ensure torrent starts automatically
 	writer.WriteField("paused", "false")
 
 	writer.Close()
@@ -654,7 +654,7 @@ func (a *App) UploadToTransmission(torrentPath string, transmissionUrl string, u
 		Method: "torrent-add",
 		Arguments: map[string]interface{}{
 			"metainfo": b64Torrent,
-			"paused":   false, // Force le démarrage automatique
+			"paused":   false,
 		},
 	}
 
@@ -846,10 +846,8 @@ func (a *App) UploadToDeluge(torrentPath string, delugeUrl string, password stri
 	_, err = makeRequest("web.add_torrents", []interface{}{
 		[]map[string]interface{}{
 			{
-				"path": filename,
-				"options": map[string]interface{}{
-					"add_paused": false, // Force le démarrage automatique
-				},
+				"path":    filename,
+				"options": map[string]interface{}{"add_paused": false},
 			},
 		},
 	})
@@ -857,9 +855,7 @@ func (a *App) UploadToDeluge(torrentPath string, delugeUrl string, password stri
 	_, err = makeRequest("core.add_torrent_file", []interface{}{
 		filename,
 		b64Torrent,
-		map[string]interface{}{
-			"add_paused": false, // Force le démarrage automatique
-		},
+		map[string]interface{}{"add_paused": false},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to add torrent to Deluge: %w", err)
