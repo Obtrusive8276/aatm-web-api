@@ -32,6 +32,6 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aatm-web-api:latest
+          tags: ghcr.io/obtrusive8276/aatm-web-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
