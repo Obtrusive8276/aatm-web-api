@@ -814,6 +814,7 @@
                 episode: /\b(?:E|Episode)\s?(\d{1,3})\b/gi,
                 seasonEpisode: /\bS(\d{1,2})E(\d{1,3})\b/gi,
                 source: /\b(Bluray|BluRay|BDRip|BRRip|WEBRip|WebRip|WEB-DL|WEBDL|WEB|HDTV|DVDRip)\b/gi,
+                vostfr: /\bVOSTFR\b/i,
                 ebookFormat: /\.(epub|pdf|mobi|azw3?|cbr|cbz)$/i
             };
 
@@ -858,6 +859,19 @@
             if (nfoContent) {
                 const nfoInfo = parseMediaInfo(nfoContent);
                 Object.assign(info, nfoInfo);
+            }
+
+            // Détecter VOSTFR depuis le nom du fichier
+            const vostfrMatch = patterns.vostfr.exec(name);
+            if (vostfrMatch) {
+                // Si audioLanguages n'existe pas encore (pas de NFO), créer le tableau
+                if (!info.audioLanguages) {
+                    info.audioLanguages = [];
+                }
+                // Ajouter VOSTFR s'il n'est pas déjà présent
+                if (!info.audioLanguages.some(l => l.toLowerCase() === 'vostfr')) {
+                    info.audioLanguages.push('VOSTFR');
+                }
             }
 
             return info;
