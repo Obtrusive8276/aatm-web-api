@@ -590,6 +590,12 @@
             const normalizeLang = (lang) => {
                 lang = lang.trim();
                 
+                // Vérifier pour VOSTFR (Version Originale Sous-Titrée Français)
+                const vostfrMatch = lang.match(/VOSTFR|VO[\s-]*STF?R?/i);
+                if (vostfrMatch) {
+                    return 'VOSTFR';
+                }
+                
                 // Vérifier pour VFF/VFQ (French dubs)
                 const vffMatch = lang.match(/VF[FQ]/i);
                 if (vffMatch) {
@@ -937,17 +943,24 @@
             if (info.audioLanguages && info.audioLanguages.length > 0) {
                 const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
                 const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const vostfrIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vostfr');
                 const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
                 const hasVFF = vffIndex >= 0;
                 const hasVFQ = vfqIndex >= 0;
+                const hasVOSTFR = vostfrIndex >= 0;
                 
                 const otherLanguages = info.audioLanguages.filter(l => {
                     const lower = l.toLowerCase();
-                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                    return lower !== 'vff' && lower !== 'vfq' && lower !== 'vostfr' && !lower.includes('français') && !lower.includes('french');
                 });
 
-                // VFF explicitly detected
-                if (hasVFF && otherLanguages.length > 0) {
+                // VOSTFR explicitly detected
+                if (hasVOSTFR && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVOSTFR) {
+                    // Only VOSTFR
+                    parts.push('VOSTFR');
+                } else if (hasVFF && otherLanguages.length > 0) {
                     parts.push('MULTI');
                 } else if (hasVFQ && otherLanguages.length > 0) {
                     parts.push('MULTI');
@@ -1155,17 +1168,24 @@
             if (info.audioLanguages && info.audioLanguages.length > 0) {
                 const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
                 const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const vostfrIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vostfr');
                 const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
                 const hasVFF = vffIndex >= 0;
                 const hasVFQ = vfqIndex >= 0;
+                const hasVOSTFR = vostfrIndex >= 0;
                 
                 const otherLanguages = info.audioLanguages.filter(l => {
                     const lower = l.toLowerCase();
-                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                    return lower !== 'vff' && lower !== 'vfq' && lower !== 'vostfr' && !lower.includes('français') && !lower.includes('french');
                 });
 
-                // VFF/VFQ explicitly detected
-                if (hasVFF && otherLanguages.length > 0) {
+                // VOSTFR explicitly detected
+                if (hasVOSTFR && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVOSTFR) {
+                    // Only VOSTFR
+                    parts.push('VOSTFR');
+                } else if (hasVFF && otherLanguages.length > 0) {
                     parts.push('MULTI');
                 } else if (hasVFQ && otherLanguages.length > 0) {
                     parts.push('MULTI');
