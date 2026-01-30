@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/anacrolix/torrent/bencode"
@@ -58,11 +59,28 @@ type FileInfo struct {
 }
 
 // App struct
-type App struct{}
+type App struct {
+	torrentNameCache map[string]string
+	cacheMutex       sync.RWMutex
+}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		torrentNameCache: make(map[string]string),
+	}
+}
+
+func (a *App) CacheTorrentName(sourcePath, name string) {
+	a.cacheMutex.Lock()
+	defer a.cacheMutex.Unlock()
+	a.torrentNameCache[sourcePath] = name
+}
+
+func (a *App) GetCachedTorrentName(sourcePath string) string {
+	a.cacheMutex.RLock()
+	defer a.cacheMutex.RUnlock()
+	return a.torrentNameCache[sourcePath]
 }
 
 // ListDirectory returns the contents of the given directory
@@ -366,6 +384,11 @@ func (a *App) CreateHardlink(sourcePath string, destDir string, newName string) 
 		return "", fmt.Errorf("cannot stat source: %w", err)
 	}
 
+	// Si newName est vide, essayer de le récupérer du cache
+	if newName == "" {
+		newName = a.GetCachedTorrentName(sourcePath)
+	}
+
 	var baseName string
 	if newName != "" {
 		baseName = newName
@@ -385,6 +408,10 @@ func (a *App) CreateHardlink(sourcePath string, destDir string, newName string) 
 		err = a.hardlinkDirectory(sourcePath, destPath)
 		if err != nil {
 			return "", err
+		}
+		// Renommer le fichier vidéo à l'intérieur du dossier pour correspondre au nom du dossier
+		if err := a.renameVideoInDir(destPath, baseName); err != nil {
+			fmt.Printf("Warning: could not rename video in dir: %v\n", err)
 		}
 	} else {
 		// For single files, just create the hardlink
@@ -426,5 +453,33 @@ func (a *App) hardlinkDirectory(srcDir, destDir string) error {
 		}
 	}
 
+	return nil
+}
+
+// renameVideoInDir renames the single video file in the directory to match the directory name
+func (a *App) renameVideoInDir(dirPath, newName string) error {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return err
+	}
+
+	var videoFiles []os.DirEntry
+	for _, entry := range entries {
+		if !entry.IsDir() && isVideoFile(strings.ToLower(filepath.Ext(entry.Name()))) {
+			videoFiles = append(videoFiles, entry)
+		}
+	}
+
+	// Only rename if there is exactly one video file to avoid ambiguity
+	if len(videoFiles) == 1 {
+		oldName := videoFiles[0].Name()
+		ext := filepath.Ext(oldName)
+		newFileName := newName + ext
+		if oldName != newFileName {
+			oldPath := filepath.Join(dirPath, oldName)
+			newPath := filepath.Join(dirPath, newFileName)
+			return os.Rename(oldPath, newPath)
+		}
+	}
 	return nil
 }
