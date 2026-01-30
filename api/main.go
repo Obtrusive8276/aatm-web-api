@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -58,6 +57,13 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	// Log startup
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	logInfo("🚀 Starting AATM API server on port %s", port)
 
 	// Directory operations
 	r.Get("/api/files", func(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +383,7 @@ func main() {
 		port = "8080"
 	}
 
-	fmt.Printf("AATM API server starting on port %s\n", port)
+	logInfo("🚀 Starting AATM API server on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))
 }
 
