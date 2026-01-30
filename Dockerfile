@@ -15,6 +15,9 @@ RUN go mod download
 COPY api/*.go ./
 COPY api/static ./static/
 
+# Ensure go.mod/go.sum are up to date
+RUN go mod tidy
+
 # Build for ARM64 (Raspberry Pi) with optimizations
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o aatm-api .
 
