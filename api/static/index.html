@@ -618,7 +618,38 @@
                     if (base === 'russian' || base === 'ru') return 'Russe';
                     if (base === 'arabic' || base === 'ar') return 'Arabe';
                 }
-                return lang;
+                return lang || 'Unknown';
+            };
+            
+            // Extraction des pistes audio avec meilleure détection
+            const audioMatches = [...nfo.matchAll(/Audio\s*(?:#\d+|\s*ID\s*:\s*\d+)?[\r\n]+(.*?)(?=(?:Audio|Text|Subtitle|Video)\s*(?:#\d+|\s*ID\s*:|$))/gis)];
+            audioMatches.forEach(match => {
+                const section = match[1];
+                const langMatch = section.match(/Language\s*:\s*([^\r\n]+)/i);
+                if (langMatch) {
+                    const lang = normalizeLang(langMatch[1]);
+                    const codecMatch = section.match(/Format\s*:\s*([^\r\n]+)/i);
+                    const codec = codecMatch ? codecMatch[1].trim() : '';
+                    const channelMatch = section.match(/Channel\(s\)\s*:\s*(\d+)/i);
+                    const channels = channelMatch ? 
+                        (parseInt(channelMatch[1]) >= 8 ? '7.1' : 
+                         parseInt(channelMatch[1]) >= 6 ? '5.1' : 
+                         parseInt(channelMatch[1]) >= 2 ? '2.0' : '1.0') : '';
+                    
+                    audioTracks.push({
+                        language: lang,
+                        codec: codec,
+                        channels: channels
+                    });
+                    
+                    const lowerLang = lang.toLowerCase();
+                    if (lowerLang.includes('français') || lowerLang.includes('french')) frenchAudio = true;
+                    else nonFrenchAudio = true;
+                }
+            });
+            
+            // Fallback: si pas de pistes trouvées avec le regex amélioré, utiliser l'ancienne méthode
+            if (audioTracks.length === 0) {                return lang;
             };
 
             // Fonction pour obtenir le codec audio avec nom commercial
@@ -703,7 +734,8 @@
                 const textHeader = s.match(/^(?:Text|Subtitle)\s*(?:#\d+)?/im);
                 const hasAudioProps = s.includes('Channel(s)') && s.includes('Sampling rate');
 
-                if (audioHeader || (!textHeader && hasAudioProps)) {
+                if ((audioHeader || (!textHeader && hasAudioProps)) && audioTracks.length === 0) {
+                    // Fallback: use section-based detection if no audio tracks detected by regex
                     const langMatch = s.match(/Language\s*:\s*([^\r\n]+)/i);
                     if (langMatch) {
                         const lang = normalizeLang(langMatch[1]);
