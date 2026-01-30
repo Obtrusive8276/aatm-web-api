@@ -18,8 +18,8 @@ COPY api/static ./static/
 # Ensure go.mod/go.sum are up to date
 RUN go mod tidy
 
-# Build for ARM64 (Raspberry Pi) with optimizations
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o aatm-api .
+# Build for ARM64 (Raspberry Pi) with optimizations - CGO disabled for cross-compilation
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o aatm-api .
 
 # Runtime stage
 FROM debian:bookworm-slim
