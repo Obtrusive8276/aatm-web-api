@@ -53,18 +53,28 @@ func shortPath(path string) string {
 // renameVideoFilesInTorrent renames video files in the torrent Info to match the torrent name
 // Only renames single video files at the root level (consistent with renameVideoInDir)
 func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
-	logInfo("renameVideoFilesInTorrent called with torrentName: %s, files count: %d", torrentName, len(info.Files))
+	logInfo("renameVideoFilesInTorrent called with torrentName: %s, files count: %d, info.Name: %s, info.Length: %d", torrentName, len(info.Files), info.Name, info.Length)
 	
-	if len(info.Files) == 0 {
-		logWarn("renameVideoFilesInTorrent: no files in torrent")
+	// Case 1: Single file torrent (Length is set, Files is empty)
+	if len(info.Files) == 0 && info.Length > 0 {
+		// For single file, the name is in info.Name and is just the filename without extension usually
+		// Since we already set info.Name = torrentName, we need to add the extension if it's a video
+		// But info.Name is already set to torrentName, so we need to check if we need to add extension
+		logInfo("renameVideoFilesInTorrent: single file mode detected (Files empty, Length: %d)", info.Length)
+		// info.Name is already set to torrentName by caller, nothing more to do
 		return
 	}
 
-	// For single-file torrents (no Files list, just a single file)
+	if len(info.Files) == 0 {
+		logWarn("renameVideoFilesInTorrent: no files in torrent and no length")
+		return
+	}
+
+	// Case 2: Single file in Files list (legacy/multi-file mode with just one file)
 	if len(info.Files) == 1 && len(info.Files[0].Path) == 1 {
 		fileName := info.Files[0].Path[0]
 		ext := filepath.Ext(fileName)
-		logInfo("renameVideoFilesInTorrent: single file detected - fileName: %s, ext: %s", fileName, ext)
+		logInfo("renameVideoFilesInTorrent: single file in Files detected - fileName: %s, ext: %s", fileName, ext)
 		if isVideoFile(strings.ToLower(ext)) {
 			// Rename the file to match torrent name
 			newName := torrentName + ext
@@ -74,7 +84,7 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 		return
 	}
 
-	// For multi-file torrents, only rename root-level video files
+	// Case 3: Multi-file torrents, only rename root-level video files
 	videoFileCount := 0
 	videoFileIndex := -1
 
@@ -269,7 +279,17 @@ func (a *App) CreateTorrent(sourcePath string, trackers []string, comment string
 
 	// Utiliser le nom personnalisé si fourni, sinon garder le nom du fichier source
 	if torrentName != "" {
-		info.Name = torrentName
+		// For single-file torrents, add extension to the name
+		if len(info.Files) == 0 && info.Length > 0 {
+			// Single file torrent - add extension
+			sourceFileName := filepath.Base(sourcePath)
+			ext := filepath.Ext(sourceFileName)
+			info.Name = torrentName + ext
+			logInfo("CreateTorrent: single-file torrent, using name with extension: %s", info.Name)
+		} else {
+			// Multi-file torrent
+			info.Name = torrentName
+		}
 		// Rename video files inside the torrent to match the torrent name (for consistency with hardlinks)
 		renameVideoFilesInTorrent(&info, torrentName)
 	}
