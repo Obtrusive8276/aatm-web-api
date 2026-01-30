@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,28 @@ var ebookExtensions = map[string]bool{
 var gameExtensions = map[string]bool{
 	".iso": true, ".nsp": true, ".xci": true, ".pkg": true,
 	".zip": true, ".rar": true, ".7z": true,
+}
+
+// ============ LOGGING HELPERS ============
+
+// logInfo logs an info-level message with timestamp
+func logInfo(format string, args ...interface{}) {
+	log.Printf("[INFO] "+format, args...)
+}
+
+// logError logs an error-level message with timestamp
+func logError(format string, args ...interface{}) {
+	log.Printf("[ERROR] "+format, args...)
+}
+
+// logWarn logs a warning-level message with timestamp
+func logWarn(format string, args ...interface{}) {
+	log.Printf("[WARN] "+format, args...)
+}
+
+// shortPath returns just the filename/dirname for cleaner logs
+func shortPath(path string) string {
+	return filepath.Base(path)
 }
 
 // renameVideoFilesInTorrent renames video files in the torrent Info to match the torrent name
@@ -230,6 +253,7 @@ func (a *App) CreateTorrent(sourcePath string, trackers []string, comment string
 
 	err := info.BuildFromFilePath(sourcePath)
 	if err != nil {
+		logError("CreateTorrent: failed to build torrent info for %s: %v", shortPath(sourcePath), err)
 		return "", err
 	}
 
@@ -279,15 +303,18 @@ func (a *App) CreateTorrent(sourcePath string, trackers []string, comment string
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
+		logError("CreateTorrent: failed to create file %s: %v", shortPath(outputPath), err)
 		return "", err
 	}
 	defer outFile.Close()
 
 	err = mi.Write(outFile)
 	if err != nil {
+		logError("CreateTorrent: failed to write torrent file: %v", err)
 		return "", err
 	}
 
+	logInfo("CreateTorrent: created %s (name: %s)", shortPath(outputPath), torrentName)
 	return outputPath, nil
 }
 
@@ -322,8 +349,10 @@ func (a *App) SaveNfo(sourcePath string, content string, torrentName string) (st
 
 	err := os.WriteFile(outputPath, []byte(content), 0644)
 	if err != nil {
+		logError("SaveNfo: failed to write %s: %v", shortPath(outputPath), err)
 		return "", err
 	}
+	logInfo("SaveNfo: created %s", shortPath(outputPath))
 	return outputPath, nil
 }
 
@@ -408,6 +437,7 @@ func (a *App) FindMatchingHardlinkDir(sourcePath string, hardlinkDirs []string) 
 func (a *App) CreateHardlink(sourcePath string, destDir string, torrentName string) (string, error) {
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
+		logError("CreateHardlink: cannot stat source %s: %v", shortPath(sourcePath), err)
 		return "", fmt.Errorf("cannot stat source: %w", err)
 	}
 
@@ -429,32 +459,38 @@ func (a *App) CreateHardlink(sourcePath string, destDir string, torrentName stri
 		// For directories, create directory structure and hardlink all files
 		err = a.hardlinkDirectory(sourcePath, destPath)
 		if err != nil {
+			logError("CreateHardlink: failed to hardlink directory: %v", err)
 			return "", err
 		}
-		// Renommer le fichier vidéo à l'intérieur du dossier pour correspondre au nom du dossier
+		// Rename the video file inside the directory to match the directory name
 		if err := a.renameVideoInDir(destPath, baseName); err != nil {
-			fmt.Printf("Warning: could not rename video in dir: %v\n", err)
+			logWarn("CreateHardlink: could not rename video in %s: %v", shortPath(destPath), err)
 		}
 	} else {
 		// For single files, just create the hardlink
 		err = os.Link(sourcePath, destPath)
 		if err != nil {
+			logError("CreateHardlink: failed to create hardlink: %v", err)
 			return "", fmt.Errorf("failed to create hardlink: %w", err)
 		}
 	}
 
+	logInfo("CreateHardlink: created %s (name: %s)", shortPath(destPath), torrentName)
 	return destPath, nil
 }
 
 // hardlinkDirectory recursively creates hardlinks for all files in a directory
 func (a *App) hardlinkDirectory(srcDir, destDir string) error {
+	log.Printf("[DEBUG] hardlinkDirectory: %s -> %s", shortPath(srcDir), shortPath(destDir))
 	// Create destination directory
 	if err := os.MkdirAll(destDir, 0755); err != nil {
+		logError("hardlinkDirectory: failed to create directory %s: %v", shortPath(destDir), err)
 		return fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
 
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
+		logError("hardlinkDirectory: failed to read directory %s: %v", shortPath(srcDir), err)
 		return fmt.Errorf("failed to read directory %s: %w", srcDir, err)
 	}
 
@@ -470,6 +506,7 @@ func (a *App) hardlinkDirectory(srcDir, destDir string) error {
 		} else {
 			// Create hardlink for files
 			if err := os.Link(srcPath, destPath); err != nil {
+				logError("hardlinkDirectory: failed to hardlink %s: %v", entry.Name(), err)
 				return fmt.Errorf("failed to create hardlink %s -> %s: %w", srcPath, destPath, err)
 			}
 		}
@@ -482,6 +519,7 @@ func (a *App) hardlinkDirectory(srcDir, destDir string) error {
 func (a *App) renameVideoInDir(dirPath, newName string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
+		logError("renameVideoInDir: failed to read directory %s: %v", shortPath(dirPath), err)
 		return err
 	}
 
@@ -500,8 +538,14 @@ func (a *App) renameVideoInDir(dirPath, newName string) error {
 		if oldName != newFileName {
 			oldPath := filepath.Join(dirPath, oldName)
 			newPath := filepath.Join(dirPath, newFileName)
-			return os.Rename(oldPath, newPath)
+			err := os.Rename(oldPath, newPath)
+			if err != nil {
+				logError("renameVideoInDir: failed to rename %s -> %s: %v", oldName, newFileName, err)
+				return err
+			}
 		}
+	} else if len(videoFiles) > 1 {
+		logWarn("renameVideoInDir: skipped rename (found %d videos, ambiguous)", len(videoFiles))
 	}
 	return nil
 }
