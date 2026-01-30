@@ -244,6 +244,7 @@ func main() {
 		var req struct {
 			SourcePath   string   `json:"sourcePath"`
 			HardlinkDirs []string `json:"hardlinkDirs"`
+			TorrentName  string   `json:"torrentName"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -258,7 +259,7 @@ func main() {
 		}
 
 		// Create the hardlink
-		hardlinkPath, err := app.CreateHardlink(req.SourcePath, destDir)
+		hardlinkPath, err := app.CreateHardlink(req.SourcePath, destDir, req.TorrentName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
