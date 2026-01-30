@@ -378,7 +378,7 @@ func main() {
 	})
 
 	// Get port from env or default
-	port := os.Getenv("PORT")
+	port = os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}

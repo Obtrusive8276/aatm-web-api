@@ -63,7 +63,9 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 		ext := filepath.Ext(fileName)
 		if isVideoFile(strings.ToLower(ext)) {
 			// Rename the file to match torrent name
-			info.Files[0].Path[0] = torrentName + ext
+			newName := torrentName + ext
+			logInfo("renameVideoFilesInTorrent: single file - '%s' -> '%s'", fileName, newName)
+			info.Files[0].Path[0] = newName
 		}
 		return
 	}
@@ -86,7 +88,9 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 	// Only rename if there's exactly one video file at root level (consistent with renameVideoInDir)
 	if videoFileCount == 1 && videoFileIndex >= 0 {
 		ext := filepath.Ext(info.Files[videoFileIndex].Path[0])
-		info.Files[videoFileIndex].Path[0] = torrentName + ext
+		newName := torrentName + ext
+		logInfo("renameVideoFilesInTorrent: multi-file - '%s' -> '%s'", info.Files[videoFileIndex].Path[0], newName)
+		info.Files[videoFileIndex].Path[0] = newName
 	}
 }
 
