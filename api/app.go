@@ -53,7 +53,10 @@ func shortPath(path string) string {
 // renameVideoFilesInTorrent renames video files in the torrent Info to match the torrent name
 // Only renames single video files at the root level (consistent with renameVideoInDir)
 func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
+	logInfo("renameVideoFilesInTorrent called with torrentName: %s, files count: %d", torrentName, len(info.Files))
+	
 	if len(info.Files) == 0 {
+		logWarn("renameVideoFilesInTorrent: no files in torrent")
 		return
 	}
 
@@ -61,6 +64,7 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 	if len(info.Files) == 1 && len(info.Files[0].Path) == 1 {
 		fileName := info.Files[0].Path[0]
 		ext := filepath.Ext(fileName)
+		logInfo("renameVideoFilesInTorrent: single file detected - fileName: %s, ext: %s", fileName, ext)
 		if isVideoFile(strings.ToLower(ext)) {
 			// Rename the file to match torrent name
 			newName := torrentName + ext
@@ -85,6 +89,8 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 		}
 	}
 
+	logInfo("renameVideoFilesInTorrent: multi-file detected - videoFileCount: %d, videoFileIndex: %d", videoFileCount, videoFileIndex)
+	
 	// Only rename if there's exactly one video file at root level (consistent with renameVideoInDir)
 	if videoFileCount == 1 && videoFileIndex >= 0 {
 		ext := filepath.Ext(info.Files[videoFileIndex].Path[0])
