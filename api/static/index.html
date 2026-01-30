@@ -882,34 +882,119 @@
             return normalized;
         }
 
+        // Detect if French is VFF or VFQ based on release group and tags
+        function detectFrenchVariant(releaseGroup, tags) {
+            const searchText = (releaseGroup + ' ' + (tags || []).join(' ')).toUpperCase();
+            
+            // Check for VFQ indicators
+            if (searchText.includes('VFQ') || 
+                searchText.includes('QUÉBEC') || 
+                searchText.includes('QUEBEC') || 
+                searchText.includes('CANADIAN') ||
+                searchText.includes('CANADA') ||
+                searchText.includes('QUEBECOIS') ||
+                searchText.includes('QUÉBÉCOIS')) {
+                return 'VFQ';
+            }
+            
+            // Check for VFF indicators
+            if (searchText.includes('VFF') || 
+                searchText.includes('FRENCH') ||
+                searchText.includes('FRANCE') ||
+                searchText.includes('EUROPEAN')) {
+                return 'VFF';
+            }
+            
+            // Default to VFF if no specific indicator
+            return 'VFF';
+        }
+
         function generateMovieReleaseName(info) {
             const parts = [];
 
             // 1. Titre (normalisé)
             if (info.title) parts.push(normalizeTitle(info.title));
 
-            // 2. Année
+            // 2. 3D (optionnel)
+            if (info.threeD) parts.push('3D');
+            
+            // 3. 3DType (optionnel - Full-SBS, Half-SBS, etc)
+            if (info.threeDType) parts.push(info.threeDType);
+
+            // 4. Année
             if (info.year) parts.push(info.year);
 
-            // 3. Info (REPACK, PROPER, etc.)
+            // 5. Info (REPACK, PROPER, CUSTOM, etc.)
             if (info.info) parts.push(info.info.toUpperCase());
 
-            // 4. Edition
+            // 6. Edition (UNRATED, DC, REMASTER, etc.)
             if (info.edition) parts.push(info.edition);
 
-            // 5. IMAX
+            // 7. iMAX
             if (info.imax) parts.push('iMAX');
 
-            // 6. Langue
-            if (info.language) {
+            // 8. Langue (VFF, VFQ, MULTI, FRENCH, etc. - from detected audioLanguages)
+            if (info.audioLanguages && info.audioLanguages.length > 0) {
+                const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
+                const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
+                const hasVFF = vffIndex >= 0;
+                const hasVFQ = vfqIndex >= 0;
+                
+                const otherLanguages = info.audioLanguages.filter(l => {
+                    const lower = l.toLowerCase();
+                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                });
+
+                // VFF explicitly detected
+                if (hasVFF && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVFQ && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVFF || hasVFQ) {
+                    // Only VFF or VFQ → use it directly
+                    parts.push((hasVFF ? 'VFF' : 'VFQ').toUpperCase());
+                } else if (hasFrench && otherLanguages.length > 0) {
+                    // Français (detect VFF/VFQ) + other languages → MULTI
+                    parts.push('MULTI');
+                } else if (hasFrench) {
+                    // Only Français → detect if VFF or VFQ
+                    const frenchVariant = detectFrenchVariant(info.releaseGroup, info.tags);
+                    parts.push(frenchVariant.toUpperCase());
+                } else if (otherLanguages.length > 1) {
+                    // Multiple non-French languages → MULTI
+                    parts.push('MULTI');
+                } else if (otherLanguages.length === 1) {
+                    // Single non-French language
+                    parts.push(otherLanguages[0].toUpperCase());
+                }
+            } else if (info.language) {
+                // Fallback to single language field
                 const lang = info.language.toUpperCase();
                 parts.push(lang === 'MULTI' ? 'MULTi' : lang);
             }
 
-            // 7. LangueInfo (VFF, VFQ, etc.)
+            // 9. LangueInfo (VFF, VFQ, TrueFrench - specifies the type of French dub)
+            if (info.audioLanguages && info.audioLanguages.length > 0) {
+                const hasVFF = info.audioLanguages.some(l => l.toLowerCase() === 'vff');
+                const hasVFQ = info.audioLanguages.some(l => l.toLowerCase() === 'vfq');
+                const otherLanguages = info.audioLanguages.filter(l => {
+                    const lower = l.toLowerCase();
+                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                });
+                
+                // Add LangueInfo tag if VFF/VFQ with other languages
+                if ((hasVFF || hasVFQ) && otherLanguages.length > 0) {
+                    if (hasVFQ) {
+                        parts.push('VFQ');
+                    } else {
+                        parts.push('TrueFrench');
+                    }
+                }
+            }
             if (info.languageInfo) parts.push(info.languageInfo.toUpperCase());
 
-            // 8. HDR/DV
+            // 10. Dynamic (HDR, DV, HDR10+, HLG, etc.)
             if (info.hdr && info.hdr.length > 0) {
                 const hdrOrder = ['HDR10+', 'HDR10', 'HDR', 'DV', 'HLG', 'SDR'];
                 const sortedHdr = info.hdr
@@ -918,16 +1003,40 @@
                 parts.push(...sortedHdr);
             }
 
-            // 9. Résolution
+            // 11. Résolution
             if (info.resolution) {
                 const res = info.resolution.toLowerCase();
                 parts.push(res.endsWith('p') ? res : res + 'p');
             }
 
-            // 10. Plateforme
+            // 12. Plateforme (optionnel - Netflix, etc.)
             if (info.platform) parts.push(info.platform.toUpperCase());
 
-            // 11. Source (normalisée)
+            // 13. Région (optionnel)
+            // (pas de champ dans ReleaseInfo actuellement, mais support ajouté pour compatibilité tracker)
+            
+            // 14. Source (BluRay, WEB-DL, REMUX, DVDRip, HDTV, HDLight, 4KLight, etc. - with detection)
+            const detectedSources = new Set();
+            const allText = (info.source + ' ' + (info.releaseGroup || '') + ' ' + (info.tags || []).join(' ')).toUpperCase();
+            
+            const sourcePatterns = {
+                'REMUX': /REMUX/,
+                'WEB-DL': /WEB-DL|WEBDL/,
+                'WEB': /^WEB$/,
+                'WEBRip': /WEBRIP|WEB.RIP/,
+                'HDTV': /HDTV/,
+                'HDLight': /HDLIGHT/,
+                '4KLight': /4KLIGHT/,
+                'BluRay': /BLURAY|BLU-RAY|BDRIP|BRRIP/,
+                'DVDRip': /DVDRIP|DVD-RIP/,
+            };
+            
+            for (const [sourceName, pattern] of Object.entries(sourcePatterns)) {
+                if (pattern.test(allText)) {
+                    detectedSources.add(sourceName);
+                }
+            }
+            
             if (info.source) {
                 let source = info.source;
                 const s = source.toLowerCase();
@@ -939,24 +1048,53 @@
                 else if (s === '4klight') source = '4KLight';
                 else if (s === 'dvdrip') source = 'DVDRip';
                 else if (s === 'hdtv') source = 'HDTV';
-                parts.push(source);
+                detectedSources.add(source);
+            }
+            
+            if (detectedSources.size > 0) {
+                parts.push(Array.from(detectedSources).join('.'));
             }
 
-            // 12. Audio (normalisé)
-            if (info.audio) {
+            // 15. Audio (EAC3, AC3, TrueHD, DTS, AAC, etc. - from detected audioCodecs)
+            if (info.audioCodecs && info.audioCodecs.length > 0) {
+                const codecs = info.audioCodecs.map(c => {
+                    let codec = c.toUpperCase();
+                    // Normalize codec names
+                    if (codec === 'TRUEHD ATMOS' || codec.includes('TRUEHD')) codec = 'TrueHD';
+                    else if (codec === 'E-AC3 ATMOS' || codec === 'EAC3 ATMOS' || codec.includes('E-AC3')) codec = 'EAC3';
+                    else if (codec === 'DTS:X') codec = 'DTS:X';
+                    else if (codec.includes('DTS')) codec = 'DTS';
+                    // Return base codec without Atmos suffix (Atmos goes in AudioSpec)
+                    return codec.replace(/\s+ATMOS/, '').replace(/\s+DTS:X/, '');
+                });
+                // Keep only unique codecs
+                const uniqueCodecs = [...new Set(codecs)];
+                parts.push(uniqueCodecs.join('.'));
+            } else if (info.audio) {
                 let audio = info.audio.toUpperCase();
                 if (audio === 'DDP' || audio === 'E-AC-3') audio = 'EAC3';
                 if (audio === 'DD' || audio === 'AC-3') audio = 'AC3';
                 parts.push(audio);
             }
 
-            // 13. Canaux audio
+            // 16. AudioChannel (5.1, 7.1, 2.0, 1.0, etc.)
             if (info.audioChannels) parts.push(info.audioChannels);
 
-            // 14. AudioSpec (Atmos)
+            // 17. AudioSpec (Atmos, DTS:X, etc. - special audio formats)
+            if (info.audioCodecs && info.audioCodecs.length > 0) {
+                const audioSpecs = new Set();
+                info.audioCodecs.forEach(c => {
+                    const lower = c.toLowerCase();
+                    if (lower.includes('atmos')) audioSpecs.add('Atmos');
+                    if (lower.includes('dts:x') || lower.includes('dtsx')) audioSpecs.add('DTS:X');
+                });
+                if (audioSpecs.size > 0) {
+                    parts.push(Array.from(audioSpecs).join('.'));
+                }
+            }
             if (info.audioSpec) parts.push(info.audioSpec);
 
-            // 15. Codec vidéo (normalisé)
+            // 18. Codec vidéo (x264, x265, H264, HEVC, AV1, etc.)
             if (info.codec) {
                 let codec = info.codec.toUpperCase();
                 if (codec === 'H264' || codec === 'H.264' || codec === 'AVC') codec = 'x264';
@@ -964,7 +1102,7 @@
                 parts.push(codec);
             }
 
-            // Construire le nom
+            // 19. Team/ReleaseGroup
             const baseName = parts.join('.');
             const team = info.releaseGroup || 'NoTag';
             return `${baseName}-${team}`;
@@ -976,10 +1114,16 @@
             // 1. Titre
             if (info.title) parts.push(normalizeTitle(info.title));
 
-            // 2. Année (facultatif pour séries)
+            // 2. 3D (optionnel)
+            if (info.threeD) parts.push('3D');
+            
+            // 3. 3DType (optionnel)
+            if (info.threeDType) parts.push(info.threeDType);
+
+            // 4. Année (optionnel pour séries)
             if (info.year) parts.push(info.year);
 
-            // 3. SaisonEpisode
+            // 5. SaisonEpisode
             if (mediaType === 'season') {
                 if (info.season) {
                     if (info.season.toUpperCase() === 'COMPLETE' || info.season.toUpperCase() === 'INTEGRALE') {
@@ -998,33 +1142,181 @@
                 }
             }
 
-            // 4-15. Mêmes tags que les films
+            // 6. Info (REPACK, PROPER, CUSTOM, etc.)
             if (info.info) parts.push(info.info.toUpperCase());
+
+            // 7. Edition (REMASTER, UNRATED, DC, etc.)
             if (info.edition) parts.push(info.edition);
+
+            // 8. iMAX
             if (info.imax) parts.push('iMAX');
-            if (info.language) parts.push(info.language === 'MULTI' ? 'MULTi' : info.language.toUpperCase());
-            if (info.languageInfo) parts.push(info.languageInfo.toUpperCase());
-            if (info.hdr && info.hdr.length > 0) parts.push(...info.hdr.map(h => h.toUpperCase()));
-            if (info.resolution) parts.push(info.resolution.toLowerCase().endsWith('p') ? info.resolution.toLowerCase() : info.resolution.toLowerCase() + 'p');
-            if (info.platform) parts.push(info.platform.toUpperCase());
-            if (info.source) {
-                let source = info.source.toLowerCase();
-                if (source === 'bluray' || source === 'bdrip') source = 'BluRay';
-                else if (source === 'web-dl' || source === 'webdl') source = 'WEB-DL';
-                else if (source === 'webrip') source = 'WEBRip';
-                else source = info.source;
-                parts.push(source);
+
+            // 9. Langue (from detected audioLanguages - same logic as movies)
+            if (info.audioLanguages && info.audioLanguages.length > 0) {
+                const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
+                const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
+                const hasVFF = vffIndex >= 0;
+                const hasVFQ = vfqIndex >= 0;
+                
+                const otherLanguages = info.audioLanguages.filter(l => {
+                    const lower = l.toLowerCase();
+                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                });
+
+                // VFF/VFQ explicitly detected
+                if (hasVFF && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVFQ && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                } else if (hasVFF || hasVFQ) {
+                    // Only VFF or VFQ → use it directly
+                    parts.push((hasVFF ? 'VFF' : 'VFQ').toUpperCase());
+                } else if (hasFrench && otherLanguages.length > 0) {
+                    // Français (detect VFF/VFQ) + other languages → MULTI
+                    parts.push('MULTI');
+                } else if (hasFrench) {
+                    // Only Français → detect if VFF or VFQ
+                    const frenchVariant = detectFrenchVariant(info.releaseGroup, info.tags);
+                    parts.push(frenchVariant.toUpperCase());
+                } else if (otherLanguages.length > 1) {
+                    // Multiple non-French languages → MULTI
+                    parts.push('MULTI');
+                } else if (otherLanguages.length === 1) {
+                    // Single non-French language
+                    parts.push(otherLanguages[0].toUpperCase());
+                }
+            } else if (info.language) {
+                const lang = info.language.toUpperCase();
+                parts.push(lang === 'MULTI' ? 'MULTi' : lang);
             }
-            if (info.audio) parts.push(info.audio.toUpperCase());
+
+            // 10. LangueInfo (VFF, VFQ, TrueFrench - specifies the type of French dub)
+            if (info.audioLanguages && info.audioLanguages.length > 0) {
+                const hasVFF = info.audioLanguages.some(l => l.toLowerCase() === 'vff');
+                const hasVFQ = info.audioLanguages.some(l => l.toLowerCase() === 'vfq');
+                const otherLanguages = info.audioLanguages.filter(l => {
+                    const lower = l.toLowerCase();
+                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                });
+                
+                // Add LangueInfo tag if VFF/VFQ with other languages
+                if ((hasVFF || hasVFQ) && otherLanguages.length > 0) {
+                    if (hasVFQ) {
+                        parts.push('VFQ');
+                    } else {
+                        parts.push('TrueFrench');
+                    }
+                }
+            }
+            if (info.languageInfo) parts.push(info.languageInfo.toUpperCase());
+
+            // 11. Dynamic (HDR, DV, HDR10+, HLG, etc.)
+            if (info.hdr && info.hdr.length > 0) {
+                const hdrOrder = ['HDR10+', 'HDR10', 'HDR', 'DV', 'HLG', 'SDR'];
+                const sortedHdr = info.hdr
+                    .map(h => h.toUpperCase().replace('DOLBY VISION', 'DV'))
+                    .sort((a, b) => hdrOrder.indexOf(a) - hdrOrder.indexOf(b));
+                parts.push(...sortedHdr);
+            }
+
+            // 12. Résolution
+            if (info.resolution) {
+                const res = info.resolution.toLowerCase();
+                parts.push(res.endsWith('p') ? res : res + 'p');
+            }
+
+            // 13. Plateforme (Netflix, etc.)
+            if (info.platform) parts.push(info.platform.toUpperCase());
+
+            // 14. Région (optionnel)
+            
+            // 15. Source (with detection - REMUX, WEB-DL, BluRay, DVDRip, HDTV, HDLight, 4KLight, etc.)
+            const detectedSources = new Set();
+            const allText = (info.source + ' ' + (info.releaseGroup || '') + ' ' + (info.tags || []).join(' ')).toUpperCase();
+            
+            const sourcePatterns = {
+                'REMUX': /REMUX/,
+                'WEB-DL': /WEB-DL|WEBDL/,
+                'WEB': /^WEB$/,
+                'WEBRip': /WEBRIP|WEB.RIP/,
+                'HDTV': /HDTV/,
+                'HDLight': /HDLIGHT/,
+                '4KLight': /4KLIGHT/,
+                'BluRay': /BLURAY|BLU-RAY|BDRIP|BRRIP/,
+                'DVDRip': /DVDRIP|DVD-RIP/,
+            };
+            
+            for (const [sourceName, pattern] of Object.entries(sourcePatterns)) {
+                if (pattern.test(allText)) {
+                    detectedSources.add(sourceName);
+                }
+            }
+            
+            if (info.source) {
+                let source = info.source;
+                const s = source.toLowerCase();
+                if (s === 'web-dl' || s === 'webdl') source = 'WEB-DL';
+                else if (s === 'webrip') source = 'WEBRip';
+                else if (s === 'bluray' || s === 'blu-ray' || s === 'bdrip' || s === 'brrip') source = 'BluRay';
+                else if (s === 'remux') source = 'REMUX';
+                else if (s === 'hdlight') source = 'HDLight';
+                else if (s === '4klight') source = '4KLight';
+                else if (s === 'dvdrip') source = 'DVDRip';
+                else if (s === 'hdtv') source = 'HDTV';
+                detectedSources.add(source);
+            }
+            
+            if (detectedSources.size > 0) {
+                parts.push(Array.from(detectedSources).join('.'));
+            }
+
+            // 16. Audio (EAC3, AC3, TrueHD, DTS, AAC, etc. - from detected audioCodecs)
+            if (info.audioCodecs && info.audioCodecs.length > 0) {
+                const codecs = info.audioCodecs.map(c => {
+                    let codec = c.toUpperCase();
+                    // Normalize codec names
+                    if (codec === 'TRUEHD ATMOS' || codec.includes('TRUEHD')) codec = 'TrueHD';
+                    else if (codec === 'E-AC3 ATMOS' || codec === 'EAC3 ATMOS' || codec.includes('E-AC3')) codec = 'EAC3';
+                    else if (codec === 'DTS:X') codec = 'DTS:X';
+                    else if (codec.includes('DTS')) codec = 'DTS';
+                    return codec.replace(/\s+ATMOS/, '').replace(/\s+DTS:X/, '');
+                });
+                const uniqueCodecs = [...new Set(codecs)];
+                parts.push(uniqueCodecs.join('.'));
+            } else if (info.audio) {
+                let audio = info.audio.toUpperCase();
+                if (audio === 'DDP' || audio === 'E-AC-3') audio = 'EAC3';
+                if (audio === 'DD' || audio === 'AC-3') audio = 'AC3';
+                parts.push(audio);
+            }
+
+            // 17. AudioChannel (5.1, 7.1, 2.0, 1.0, etc.)
             if (info.audioChannels) parts.push(info.audioChannels);
+
+            // 18. AudioSpec (Atmos, DTS:X, etc.)
+            if (info.audioCodecs && info.audioCodecs.length > 0) {
+                const audioSpecs = new Set();
+                info.audioCodecs.forEach(c => {
+                    const lower = c.toLowerCase();
+                    if (lower.includes('atmos')) audioSpecs.add('Atmos');
+                    if (lower.includes('dts:x') || lower.includes('dtsx')) audioSpecs.add('DTS:X');
+                });
+                if (audioSpecs.size > 0) {
+                    parts.push(Array.from(audioSpecs).join('.'));
+                }
+            }
             if (info.audioSpec) parts.push(info.audioSpec);
+
+            // 19. Codec vidéo (x264, x265, H264, HEVC, AV1, etc.)
             if (info.codec) {
                 let codec = info.codec.toUpperCase();
-                if (codec === 'HEVC' || codec === 'H265') codec = 'x265';
-                if (codec === 'AVC' || codec === 'H264') codec = 'x264';
+                if (codec === 'H264' || codec === 'H.264' || codec === 'AVC') codec = 'x264';
+                if (codec === 'H265' || codec === 'H.265' || codec === 'HEVC') codec = 'x265';
                 parts.push(codec);
             }
 
+            // 20. Team/ReleaseGroup
             const baseName = parts.join('.');
             const team = info.releaseGroup || 'NoTag';
             return `${baseName}-${team}`;
