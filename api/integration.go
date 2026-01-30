@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -224,6 +226,8 @@ func (a *App) UploadToLaCale(torrentPath string, nfoPath string, title string, d
 
 	// 3. Identify Tags
 	matchedTags := findLocalMatchingTags(relevantChars, releaseInfo)
+	
+	logInfo("UploadToLaCale: matched %d tags for %s", len(matchedTags), releaseInfo.Title)
 
 	// 4. Authenticate (Get Session)
 	client, err := a.LaCaleLogin(email, password)
@@ -367,6 +371,221 @@ func min(a, b int) int {
 	return b
 }
 
+// enhanceSourceDetection enriches source detection with additional patterns
+// Detects REMUX, WEB-DL, HDTV, HDLight, 4KLight from release group and tags
+func enhanceSourceDetection(source string, releaseGroup string, tags []string) []string {
+	var sources []string
+	
+	// Add the main source if provided
+	if source != "" {
+		sources = append(sources, source)
+	}
+	
+	// Combine all text to search
+	allText := strings.ToUpper(source + " " + releaseGroup + " " + strings.Join(tags, " "))
+	
+	// Detect advanced sources
+	detectionPatterns := map[string]string{
+		"REMUX":     "REMUX",
+		"WEB-DL":    "WEB-DL|WEBDL",
+		"WEBRip":    "WEBRIP|WEB RIP",
+		"HDTV":      "HDTV",
+		"HDLight":   "HDLIGHT",
+		"4KLight":   "4KLIGHT",
+		"BluRay":    "BLURAY|BLU-RAY|BDRIP",
+		"DVDRip":    "DVDRIP|DVD-RIP",
+		"FULL Disc": "FULL.?DISC|COMPLETE.?DISC",
+		"TV":        "^TV$|\\bTV\\b",
+	}
+	
+	for tagName, pattern := range detectionPatterns {
+		if matched, err := regexp.MatchString(pattern, allText); err == nil && matched {
+			// Avoid duplicates
+			alreadyAdded := false
+			for _, s := range sources {
+				if strings.EqualFold(s, tagName) {
+					alreadyAdded = true
+					break
+				}
+			}
+			if !alreadyAdded {
+				sources = append(sources, tagName)
+			}
+		}
+	}
+	
+	return sources
+}
+
+// enhanceCharacteristics enhances video characteristics detection
+// Detects 10-bit encoding from codec information
+func enhanceCharacteristics(characteristics []string, codec string) []string {
+	result := make([]string, len(characteristics))
+	copy(result, characteristics)
+	
+	// Detect 10-bit from codec names
+	if codec != "" {
+		codecUpper := strings.ToUpper(codec)
+		if strings.Contains(codecUpper, "10-BIT") || strings.Contains(codecUpper, "10BIT") ||
+			strings.Contains(codecUpper, "P10") || strings.Contains(codecUpper, "YUV420P10") {
+			// Check if 10-bit not already in list
+			alreadyAdded := false
+			for _, c := range result {
+				if strings.EqualFold(c, "10 bits") {
+					alreadyAdded = true
+					break
+				}
+			}
+			if !alreadyAdded {
+				result = append(result, "10 bits")
+			}
+		}
+	}
+	
+	return result
+}
+
+// enhanceAudioCodecDetection detects audio codec variants (Atmos, DTS:X)
+// Improves codec detection by adding Dolby Atmos and DTS:X variants
+func enhanceAudioCodecDetection(audioCodecs []string, releaseGroup string, tags []string) []string {
+	result := make([]string, len(audioCodecs))
+	copy(result, audioCodecs)
+
+	// Combine all text to search for variant indicators
+	allText := strings.ToUpper(strings.Join(audioCodecs, " ") + " " + releaseGroup + " " + strings.Join(tags, " "))
+
+	// Check for Atmos indicators
+	hasAtmos := false
+	if strings.Contains(allText, "ATMOS") {
+		hasAtmos = true
+	}
+
+	// Check for DTS:X indicators
+	hasDtsX := false
+	if strings.Contains(allText, "DTS:X") || strings.Contains(allText, "DTSX") {
+		hasDtsX = true
+	}
+
+	// If Atmos detected, enhance TrueHD or E-AC3 entries
+	if hasAtmos {
+		for i, codec := range result {
+			codecUpper := strings.ToUpper(codec)
+			if strings.Contains(codecUpper, "TRUEHD") && !strings.Contains(codecUpper, "ATMOS") {
+				result[i] = "TrueHD Atmos"
+			} else if strings.Contains(codecUpper, "E-AC3") && !strings.Contains(codecUpper, "ATMOS") {
+				result[i] = "E-AC3 Atmos"
+			}
+		}
+		// Add standalone Atmos variant if not already present
+		alreadyHasAtmosVariant := false
+		for _, codec := range result {
+			if strings.Contains(strings.ToUpper(codec), "ATMOS") {
+				alreadyHasAtmosVariant = true
+				break
+			}
+		}
+		// If no specific Atmos codec found, log it
+		if !alreadyHasAtmosVariant {
+			logWarn(fmt.Sprintf("[ENHANCE AUDIO] Atmos detected in tags but no TrueHD/E-AC3 found"))
+		}
+	}
+
+	// If DTS:X detected, add it if not already present
+	if hasDtsX {
+		alreadyHasDtsX := false
+		for _, codec := range result {
+			if strings.EqualFold(codec, "DTS:X") {
+				alreadyHasDtsX = true
+				break
+			}
+		}
+		if !alreadyHasDtsX {
+			result = append(result, "DTS:X")
+		}
+	}
+
+	return result
+}
+
+// enhanceLanguageDetection improves language detection
+// Adds support for VFF/VFQ (French dubs) and handles MULTI scenarios
+func enhanceLanguageDetection(languages []string, releaseGroup string, tags []string) []string {
+	result := make([]string, len(languages))
+	copy(result, languages)
+
+	// Check for VFF/VFQ (French dub) indicators
+	allText := strings.ToLower(strings.Join(languages, " ") + " " + releaseGroup + " " + strings.Join(tags, " "))
+
+	hasVFF := strings.Contains(allText, "vff")
+	hasVFQ := strings.Contains(allText, "vfq")
+
+	// If VFF/VFQ detected, enhance or add them
+	if hasVFF || hasVFQ {
+		hasVFFTag := false
+		hasVFQTag := false
+		hasFrenchat := false
+
+		for _, lang := range result {
+			langLower := strings.ToLower(lang)
+			if strings.EqualFold(lang, "VFF") || strings.EqualFold(lang, "VFQ") {
+				if strings.EqualFold(lang, "VFF") {
+					hasVFFTag = true
+				} else {
+					hasVFQTag = true
+				}
+			}
+			if strings.EqualFold(lang, "Français") || strings.Contains(langLower, "french") {
+				hasFrenchat = true
+			}
+		}
+
+		// Add VFF if detected and not already present
+		if hasVFF && !hasVFFTag && !hasFrenchat {
+			result = append(result, "VFF")
+			logInfo(fmt.Sprintf("[ENHANCE LANG] Added VFF variant"))
+		}
+
+		// Add VFQ if detected and not already present
+		if hasVFQ && !hasVFQTag && !hasFrenchat {
+			result = append(result, "VFQ")
+			logInfo(fmt.Sprintf("[ENHANCE LANG] Added VFQ variant"))
+		}
+
+		// If both VFF and VFQ present with other languages, ensure MULTi is set
+		if (hasVFFTag || hasVFQTag) {
+			hasMULTi := false
+			hasNonFrench := false
+			for _, lang := range result {
+				if strings.EqualFold(lang, "MULTi") {
+					hasMULTi = true
+				}
+				langLower := strings.ToLower(lang)
+				if !strings.EqualFold(lang, "Français") && !strings.EqualFold(lang, "VFF") && !strings.EqualFold(lang, "VFQ") &&
+					!strings.Contains(langLower, "french") && lang != "" {
+					hasNonFrench = true
+				}
+			}
+			if !hasMULTi && hasNonFrench {
+				result = append(result, "MULTi")
+				logInfo(fmt.Sprintf("[ENHANCE LANG] Added MULTi due to VFF/VFQ + other languages"))
+			}
+		}
+	}
+
+	// Ensure no duplicate languages
+	seenLangs := make(map[string]bool)
+	finalResult := []string{}
+	for _, lang := range result {
+		langKey := strings.ToLower(lang)
+		if !seenLangs[langKey] {
+			seenLangs[langKey] = true
+			finalResult = append(finalResult, lang)
+		}
+	}
+
+	return finalResult
+}
+
 func findLocalCategory(categories []LocalCategory, mediaType string) (string, []LocalCharacteristic) {
 	// Recursive search for keywords
 	// mediaType: "movie", "episode", "season", "ebook" -> "films", "series", "e-books"
@@ -456,20 +675,27 @@ func findLocalMatchingTags(characteristics []LocalCharacteristic, info ReleaseIn
 			if len(valuesToCheck) == 0 && info.Audio != "" {
 				valuesToCheck = []string{info.Audio}
 			}
+			// Enhance audio codec detection (Atmos, DTS:X)
+			valuesToCheck = enhanceAudioCodecDetection(valuesToCheck, info.ReleaseGroup, info.Tags)
 		case strings.Contains(slug, "langues") || strings.Contains(slug, "langue"):
 			valuesToCheck = info.AudioLanguages
 			if len(valuesToCheck) == 0 && info.Language != "" {
 				valuesToCheck = []string{info.Language}
 			}
+			// Enhance language detection (VFF, VFQ, MULTi)
+			valuesToCheck = enhanceLanguageDetection(valuesToCheck, info.ReleaseGroup, info.Tags)
 		case strings.Contains(slug, "sous-titres"):
 			valuesToCheck = info.SubtitleLanguages
 		case strings.Contains(slug, "extension") || strings.Contains(slug, "format"):
 			valuesToCheck = []string{info.Container}
-		case strings.Contains(slug, "source"):
-			valuesToCheck = []string{info.Source}
+		case strings.Contains(slug, "source") || strings.Contains(slug, "type"):
+			// Enrichir avec détections supplémentaires de source
+			valuesToCheck = enhanceSourceDetection(info.Source, info.ReleaseGroup, info.Tags)
 		case strings.Contains(slug, "caract") || strings.Contains(slug, "hdr"):
 			valuesToCheck = info.Hdr
 			valuesToCheck = append(valuesToCheck, info.Tags...)
+			// Enhance with automatic detections
+			valuesToCheck = enhanceCharacteristics(valuesToCheck, info.Codec)
 		}
 
 		// Filter empty

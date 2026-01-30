@@ -589,20 +589,28 @@
             // Fonction pour nettoyer et normaliser les langues
             const normalizeLang = (lang) => {
                 lang = lang.trim();
+                
+                // Vérifier pour VFF/VFQ (French dubs)
+                const vffMatch = lang.match(/VF[FQ]/i);
+                if (vffMatch) {
+                    const vff = vffMatch[0].toUpperCase();
+                    return vff === 'VFQ' ? 'VFQ' : 'VFF'; // VFF pour VFF ou autres
+                }
+                
                 const match = lang.match(/^([\w\-]+)/i);
                 if (match) {
                     const base = match[1].toLowerCase();
-                    if (base === 'french' || base === 'français') return 'Français';
-                    if (base === 'english') return 'Anglais';
-                    if (base === 'spanish' || base === 'español') return 'Espagnol';
-                    if (base === 'german' || base === 'deutsch') return 'Allemand';
-                    if (base === 'italian' || base === 'italiano') return 'Italien';
-                    if (base === 'portuguese') return 'Portugais';
-                    if (base === 'japanese') return 'Japonais';
-                    if (base === 'korean') return 'Coréen';
-                    if (base === 'chinese') return 'Chinois';
-                    if (base === 'russian') return 'Russe';
-                    if (base === 'arabic') return 'Arabe';
+                    if (base === 'french' || base === 'français' || base === 'fr') return 'Français';
+                    if (base === 'english' || base === 'en') return 'Anglais';
+                    if (base === 'spanish' || base === 'español' || base === 'es') return 'Espagnol';
+                    if (base === 'german' || base === 'deutsch' || base === 'de') return 'Allemand';
+                    if (base === 'italian' || base === 'italiano' || base === 'it') return 'Italien';
+                    if (base === 'portuguese' || base === 'português' || base === 'pt') return 'Portugais';
+                    if (base === 'japanese' || base === 'ja') return 'Japonais';
+                    if (base === 'korean' || base === 'ko') return 'Coréen';
+                    if (base === 'chinese' || base === 'zh') return 'Chinois';
+                    if (base === 'russian' || base === 'ru') return 'Russe';
+                    if (base === 'arabic' || base === 'ar') return 'Arabe';
                 }
                 return lang;
             };
@@ -611,10 +619,13 @@
             const getAudioCodec = (section) => {
                 let codec = '';
                 let commercial = '';
+                let isAtmos = false;
+                let isDtsX = false;
 
                 const formatMatch = section.match(/Format\s*:\s*([^\r\n]+)/i);
                 if (formatMatch) {
                     const fmt = formatMatch[1].trim();
+                    // Déterminer codec de base
                     if (fmt.match(/E-AC-3/i)) codec = 'EAC3';
                     else if (fmt.match(/AC-3/i)) codec = 'AC3';
                     else if (fmt.match(/DTS-HD MA/i)) codec = 'DTS-HD MA';
@@ -626,15 +637,31 @@
                     else if (fmt.match(/Opus/i)) codec = 'Opus';
                     else if (fmt.match(/MP3|MPEG Audio/i)) codec = 'MP3';
                     else if (fmt.match(/PCM/i)) codec = 'PCM';
+                    else if (fmt.match(/AC4/i)) codec = 'AC4';
+                    else if (fmt.match(/HE-AAC/i)) codec = 'HE-AAC';
                     else codec = fmt;
+                    
+                    // Vérifier Atmos/DTS:X
+                    isAtmos = fmt.match(/Atmos/i) !== null;
+                    isDtsX = fmt.match(/DTS:X|DTS X/i) !== null;
                 }
 
                 const commercialMatch = section.match(/Commercial name\s*:\s*([^\r\n]+)/i);
                 if (commercialMatch) {
                     commercial = commercialMatch[1].trim();
+                    // Vérifier Atmos/DTS:X dans le nom commercial aussi
+                    if (!isAtmos) isAtmos = commercial.match(/Atmos/i) !== null;
+                    if (!isDtsX) isDtsX = commercial.match(/DTS:X|DTS X/i) !== null;
                 }
 
-                return commercial ? `${codec} (${commercial})` : codec;
+                // Construire le nom final avec variante
+                let finalCodec = codec;
+                if (isDtsX) finalCodec = 'DTS:X';
+                else if (isAtmos && codec === 'TrueHD') finalCodec = 'TrueHD Atmos';
+                else if (isAtmos && codec === 'EAC3') finalCodec = 'E-AC3 Atmos';
+                else if (isAtmos) finalCodec = codec + ' Atmos';
+
+                return commercial && !finalCodec.includes(commercial) ? `${finalCodec} (${commercial})` : finalCodec;
             };
 
             // Fonction pour obtenir les canaux audio
