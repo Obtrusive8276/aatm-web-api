@@ -1818,7 +1818,8 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 sourcePath: state.selectedFile,
-                                hardlinkDirs: state.settings.hardlinkDirs
+                                hardlinkDirs: state.settings.hardlinkDirs,
+                                torrentName: torrentName
                             })
                         });
                         if (hardlinkRes.ok) {

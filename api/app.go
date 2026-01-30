@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/anacrolix/torrent/bencode"
@@ -60,27 +59,11 @@ type FileInfo struct {
 
 // App struct
 type App struct {
-	torrentNameCache map[string]string
-	cacheMutex       sync.RWMutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{
-		torrentNameCache: make(map[string]string),
-	}
-}
-
-func (a *App) CacheTorrentName(sourcePath, name string) {
-	a.cacheMutex.Lock()
-	defer a.cacheMutex.Unlock()
-	a.torrentNameCache[sourcePath] = name
-}
-
-func (a *App) GetCachedTorrentName(sourcePath string) string {
-	a.cacheMutex.RLock()
-	defer a.cacheMutex.RUnlock()
-	return a.torrentNameCache[sourcePath]
+	return &App{}
 }
 
 // ListDirectory returns the contents of the given directory
@@ -378,20 +361,16 @@ func (a *App) FindMatchingHardlinkDir(sourcePath string, hardlinkDirs []string) 
 }
 
 // CreateHardlink creates hardlinks for the source path in the destination directory
-func (a *App) CreateHardlink(sourcePath string, destDir string, newName string) (string, error) {
+// torrentName is the release name from the torrent metadata (optional)
+func (a *App) CreateHardlink(sourcePath string, destDir string, torrentName string) (string, error) {
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("cannot stat source: %w", err)
 	}
 
-	// Si newName est vide, essayer de le récupérer du cache
-	if newName == "" {
-		newName = a.GetCachedTorrentName(sourcePath)
-	}
-
 	var baseName string
-	if newName != "" {
-		baseName = newName
+	if torrentName != "" {
+		baseName = torrentName
 		if !sourceInfo.IsDir() {
 			ext := filepath.Ext(sourcePath)
 			if ext != "" && !strings.HasSuffix(strings.ToLower(baseName), strings.ToLower(ext)) {

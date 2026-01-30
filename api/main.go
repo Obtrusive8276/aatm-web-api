@@ -251,9 +251,6 @@ func main() {
 			return
 		}
 
-		// DEBUG: Afficher le nom reçu pour vérifier s'il est vide
-		fmt.Printf("DEBUG: CreateHardlink - Source: %s, TorrentName: '%s'\n", req.SourcePath, req.TorrentName)
-
 		// Find the matching hardlink directory on the same device
 		destDir, err := app.FindMatchingHardlinkDir(req.SourcePath, req.HardlinkDirs)
 		if err != nil {
