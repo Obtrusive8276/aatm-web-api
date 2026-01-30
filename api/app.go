@@ -27,7 +27,48 @@ var gameExtensions = map[string]bool{
 	".zip": true, ".rar": true, ".7z": true,
 }
 
+// renameVideoFilesInTorrent renames video files in the torrent Info to match the torrent name
+// Only renames single video files at the root level (consistent with renameVideoInDir)
+func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
+	if len(info.Files) == 0 {
+		return
+	}
+
+	// For single-file torrents (no Files list, just a single file)
+	if len(info.Files) == 1 && len(info.Files[0].Path) == 1 {
+		fileName := info.Files[0].Path[0]
+		ext := filepath.Ext(fileName)
+		if isVideoFile(strings.ToLower(ext)) {
+			// Rename the file to match torrent name
+			info.Files[0].Path[0] = torrentName + ext
+		}
+		return
+	}
+
+	// For multi-file torrents, only rename root-level video files
+	videoFileCount := 0
+	videoFileIndex := -1
+
+	for i, file := range info.Files {
+		// Check if it's a root-level file (path length 1) and is a video
+		if len(file.Path) == 1 {
+			ext := filepath.Ext(file.Path[0])
+			if isVideoFile(strings.ToLower(ext)) {
+				videoFileCount++
+				videoFileIndex = i
+			}
+		}
+	}
+
+	// Only rename if there's exactly one video file at root level (consistent with renameVideoInDir)
+	if videoFileCount == 1 && videoFileIndex >= 0 {
+		ext := filepath.Ext(info.Files[videoFileIndex].Path[0])
+		info.Files[videoFileIndex].Path[0] = torrentName + ext
+	}
+}
+
 // isMediaFile checks if the extension is a supported media file
+
 func isMediaFile(ext string) bool {
 	return videoExtensions[ext] || ebookExtensions[ext] || gameExtensions[ext]
 }
@@ -195,6 +236,8 @@ func (a *App) CreateTorrent(sourcePath string, trackers []string, comment string
 	// Utiliser le nom personnalisé si fourni, sinon garder le nom du fichier source
 	if torrentName != "" {
 		info.Name = torrentName
+		// Rename video files inside the torrent to match the torrent name (for consistency with hardlinks)
+		renameVideoFilesInTorrent(&info, torrentName)
 	}
 
 	mi := metainfo.MetaInfo{
