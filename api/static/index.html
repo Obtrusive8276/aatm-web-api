@@ -619,37 +619,7 @@
                     if (base === 'arabic' || base === 'ar') return 'Arabe';
                 }
                 return lang || 'Unknown';
-            };
-            
-            // Extraction des pistes audio avec meilleure détection
-            const audioMatches = [...nfo.matchAll(/Audio\s*(?:#\d+|\s*ID\s*:\s*\d+)?[\r\n]+(.*?)(?=(?:Audio|Text|Subtitle|Video)\s*(?:#\d+|\s*ID\s*:|$))/gis)];
-            audioMatches.forEach(match => {
-                const section = match[1];
-                const langMatch = section.match(/Language\s*:\s*([^\r\n]+)/i);
-                if (langMatch) {
-                    const lang = normalizeLang(langMatch[1]);
-                    const codecMatch = section.match(/Format\s*:\s*([^\r\n]+)/i);
-                    const codec = codecMatch ? codecMatch[1].trim() : '';
-                    const channelMatch = section.match(/Channel\(s\)\s*:\s*(\d+)/i);
-                    const channels = channelMatch ? 
-                        (parseInt(channelMatch[1]) >= 8 ? '7.1' : 
-                         parseInt(channelMatch[1]) >= 6 ? '5.1' : 
-                         parseInt(channelMatch[1]) >= 2 ? '2.0' : '1.0') : '';
-                    
-                    audioTracks.push({
-                        language: lang,
-                        codec: codec,
-                        channels: channels
-                    });
-                    
-                    const lowerLang = lang.toLowerCase();
-                    if (lowerLang.includes('français') || lowerLang.includes('french')) frenchAudio = true;
-                    else nonFrenchAudio = true;
-                }
-            });
-            
-            // Fallback: si pas de pistes trouvées avec le regex amélioré, utiliser l'ancienne méthode
-            if (audioTracks.length === 0) {                return lang;
+            };                return lang;
             };
 
             // Fonction pour obtenir le codec audio avec nom commercial
@@ -782,7 +752,6 @@
                         if (subType && subFormat) suffix = ` (${subType} ${subFormat})`;
                         else if (subType) suffix = ` (${subType})`;
                         else if (subFormat) suffix = ` (${subFormat})`;
-
                         subtitleTracks.push(lang + suffix);
                     }
                 }
@@ -790,7 +759,10 @@
 
             if (audioTracks.length > 0) {
                 info.audioTracks = audioTracks;
-                info.audioLanguages = audioTracks.map(t => t.language);
+                // Sauvegarder les langues détectées pour affichage des tags
+                info.detectedLanguages = audioTracks.map(t => t.language);
+                // Ne pas remplir audioLanguages pour éviter de modifier le nom du torrent
+                info.audioLanguages = [];
                 // Extraire les codecs audio uniques pour les tags
                 const uniqueCodecs = new Set();
                 audioTracks.forEach(t => {
@@ -1815,7 +1787,9 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             if (info.language) tags.push(`<span class="tag language">${info.language}</span>`);
             if (info.hdr) info.hdr.forEach(h => tags.push(`<span class="tag hdr">${h}</span>`));
             if (info.releaseGroup) tags.push(`<span class="tag group">-${info.releaseGroup}</span>`);
-            if (info.audioLanguages) info.audioLanguages.forEach(l => tags.push(`<span class="tag language">${l}</span>`));
+            // Afficher les langues détectées au lieu des langues utilisées pour le nom
+            if (info.detectedLanguages) info.detectedLanguages.forEach(l => tags.push(`<span class="tag language">${l}</span>`));
+            else if (info.audioLanguages) info.audioLanguages.forEach(l => tags.push(`<span class="tag language">${l}</span>`));
             document.getElementById('releaseTags').innerHTML = tags.length > 0 ? tags.join('') : '-';
         }
 
