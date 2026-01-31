@@ -313,6 +313,33 @@ func (a *App) GetMediaInfo(filePath string) (*MediaInfoResponse, error) {
 	return &result, nil
 }
 
+// GetMediaInfoText executes mediainfo command and returns text output for NFO
+func (a *App) GetMediaInfoText(filePath string) (string, error) {
+	// Check if mediainfo is in PATH
+	path, err := exec.LookPath("mediainfo")
+	if err != nil {
+		return "", fmt.Errorf("mediainfo not found in PATH: %w", err)
+	}
+
+	cmd := exec.Command(path, filePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("mediainfo execution failed: %w", err)
+	}
+
+	// Replace full path with just filename in "Complete name" line
+	result := string(output)
+	fileName := filepath.Base(filePath)
+	lines := strings.Split(result, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "Complete name") {
+			lines[i] = "Complete name                            : " + fileName
+			break
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
 // CreateTorrent creates a .torrent file for the given source path
 // torrentName is the name that will appear in the torrent (the release name)
 func (a *App) CreateTorrent(sourcePath string, trackers []string, comment string, isPrivate bool, torrentName string) (string, error) {

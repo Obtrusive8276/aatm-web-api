@@ -96,13 +96,26 @@ func main() {
 			http.Error(w, "path parameter required", http.StatusBadRequest)
 			return
 		}
-		info, err := app.GetMediaInfo(path)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		format := r.URL.Query().Get("format")
+		
+		// Format text pour NFO, sinon JSON pour parsing
+		if format == "text" {
+			info, err := app.GetMediaInfoText(path)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"mediainfo": info})
+		} else {
+			info, err := app.GetMediaInfo(path)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(info)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(info)
 	})
 
 	// Torrent creation

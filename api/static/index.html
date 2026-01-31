@@ -1774,7 +1774,7 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 } else {
                     const [sizeRes, mediaRes] = await Promise.all([
                         fetch(`${API_BASE}/api/directory-size?path=${encodeURIComponent(fullPath)}`),
-                        fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(fullPath)}`)
+                        fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(fullPath)}&format=text`)
                     ]);
                     const sizeData = await sizeRes.json();
                     const mediaData = await mediaRes.json();
@@ -1929,18 +1929,23 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 } else {
                     mediaInfoEl.textContent = 'Chargement...';
                     try {
-                        const res = await fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(state.selectedFile)}`);
-                        const data = await res.json();
-                        mediaInfoEl.textContent = data.mediainfo;
-                        nfoEl.value = data.mediainfo;
-                        state.nfoContent = data.mediainfo;
+                        // Récupérer MediaInfo en format texte pour le NFO
+                        const textRes = await fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(state.selectedFile)}&format=text`);
+                        const textData = await textRes.json();
+                        mediaInfoEl.textContent = textData.mediainfo;
+                        nfoEl.value = textData.mediainfo;
+                        state.nfoContent = textData.mediainfo;
 
-                        // Re-parse with NFO content for better tag detection
+                        // Récupérer MediaInfo en format JSON pour le parsing
+                        const jsonRes = await fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(state.selectedFile)}`);
+                        const jsonData = await jsonRes.json();
+                        
+                        // Re-parse with MediaInfo JSON for better tag detection
                         const name = state.selectedFile.split('/').pop();
-                        state.releaseInfo = parseReleaseName(name, data.mediainfo);
+                        state.releaseInfo = parseReleaseName(name, jsonData);
                         updateReleaseTags();
 
-                        // Régénérer le nom du torrent avec les infos complètes du NFO
+                        // Régénérer le nom du torrent avec les infos complètes
                         const generatedName = generateReleaseName(state.releaseInfo, state.mediaType);
                         if (generatedName) {
                             document.getElementById('torrentName').value = generatedName;
