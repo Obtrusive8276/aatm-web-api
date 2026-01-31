@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -25,6 +26,65 @@ var ebookExtensions = map[string]bool{
 var gameExtensions = map[string]bool{
 	".iso": true, ".nsp": true, ".xci": true, ".pkg": true,
 	".zip": true, ".rar": true, ".7z": true,
+}
+
+// ============ MEDIAINFO STRUCTURES ============
+
+type MediaInfoResponse struct {
+	Media MediaInfoMedia `json:"media"`
+}
+
+type MediaInfoMedia struct {
+	Ref   string           `json:"@ref"`
+	Track []MediaInfoTrack `json:"track"`
+}
+
+type MediaInfoTrack struct {
+	Type                     string `json:"@type"`
+	VideoCount               string `json:"VideoCount,omitempty"`
+	AudioCount               string `json:"AudioCount,omitempty"`
+	TextCount                string `json:"TextCount,omitempty"`
+	FileExtension            string `json:"FileExtension,omitempty"`
+	Format                   string `json:"Format,omitempty"`
+	FormatInfo               string `json:"Format_Info,omitempty"`
+	FormatCommercial         string `json:"Format_Commercial,omitempty"`
+	CodecID                  string `json:"CodecID,omitempty"`
+	FileSize                 string `json:"FileSize,omitempty"`
+	Duration                 string `json:"Duration,omitempty"`
+	OverallBitRate           string `json:"OverallBitRate,omitempty"`
+	EncodedApplication       string `json:"Encoded_Application,omitempty"`
+	EncodedLibrary           string `json:"Encoded_Library,omitempty"`
+	// Video specific
+	Width                    string `json:"Width,omitempty"`
+	Height                   string `json:"Height,omitempty"`
+	PixelAspectRatio         string `json:"PixelAspectRatio,omitempty"`
+	DisplayAspectRatio       string `json:"DisplayAspectRatio,omitempty"`
+	FrameRate                string `json:"FrameRate,omitempty"`
+	FrameRateMode            string `json:"FrameRate_Mode,omitempty"`
+	BitRate                  string `json:"BitRate,omitempty"`
+	BitDepth                 string `json:"BitDepth,omitempty"`
+	ChromaSubsampling        string `json:"ChromaSubsampling,omitempty"`
+	ColourPrimaries          string `json:"colour_primaries,omitempty"`
+	TransferCharacteristics  string `json:"transfer_characteristics,omitempty"`
+	MatrixCoefficients       string `json:"matrix_coefficients,omitempty"`
+	HDRFormat                string `json:"HDR_Format,omitempty"`
+	HDRFormatCompatibility   string `json:"HDR_Format_Compatibility,omitempty"`
+	MasteringDisplayColorPrimaries string `json:"MasteringDisplay_ColorPrimaries,omitempty"`
+	MasteringDisplayLuminance      string `json:"MasteringDisplay_Luminance,omitempty"`
+	// Audio specific
+	Channels                 string `json:"Channels,omitempty"`
+	ChannelPositions         string `json:"ChannelPositions,omitempty"`
+	ChannelLayout            string `json:"ChannelLayout,omitempty"`
+	SamplingRate             string `json:"SamplingRate,omitempty"`
+	SamplingCount            string `json:"SamplingCount,omitempty"`
+	BitRateMode              string `json:"BitRate_Mode,omitempty"`
+	CompressionMode          string `json:"Compression_Mode,omitempty"`
+	// Common
+	Language                 string `json:"Language,omitempty"`
+	LanguageString           string `json:"Language_String,omitempty"`
+	Default                  string `json:"Default,omitempty"`
+	Forced                   string `json:"Forced,omitempty"`
+	Title                    string `json:"Title,omitempty"`
 }
 
 // ============ LOGGING HELPERS ============
@@ -231,31 +291,26 @@ func dirContainsMediaDepth(path string, currentDepth, maxDepth int) bool {
 	return false
 }
 
-// GetMediaInfo executes mediainfo command on the file and returns output
-func (a *App) GetMediaInfo(filePath string) (string, error) {
+// GetMediaInfo executes mediainfo command on the file and returns JSON output
+func (a *App) GetMediaInfo(filePath string) (*MediaInfoResponse, error) {
 	// Check if mediainfo is in PATH
 	path, err := exec.LookPath("mediainfo")
 	if err != nil {
-		return "", fmt.Errorf("mediainfo not found in PATH: %w", err)
+		return nil, fmt.Errorf("mediainfo not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(path, filePath)
+	cmd := exec.Command(path, "--Output=JSON", filePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("mediainfo execution failed: %w", err)
 	}
 
-	// Replace full path with just filename in "Complete name" line
-	result := string(output)
-	fileName := filepath.Base(filePath)
-	lines := strings.Split(result, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(line, "Complete name") {
-			lines[i] = "Complete name                            : " + fileName
-			break
-		}
+	var result MediaInfoResponse
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse mediainfo JSON: %w", err)
 	}
-	return strings.Join(lines, "\n"), nil
+
+	return &result, nil
 }
 
 // CreateTorrent creates a .torrent file for the given source path
