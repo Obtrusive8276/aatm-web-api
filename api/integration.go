@@ -225,7 +225,7 @@ func (a *App) UploadToLaCale(torrentPath string, nfoPath string, title string, d
 
 	// 3. Identify Tags
 	matchedTags := findLocalMatchingTags(relevantChars, releaseInfo)
-	
+
 	logInfo("UploadToLaCale: matched %d tags for %s", len(matchedTags), releaseInfo.Title)
 
 	// 4. Authenticate (Get Session)
@@ -374,15 +374,15 @@ func min(a, b int) int {
 // Detects REMUX, WEB-DL, HDTV, HDLight, 4KLight from release group and tags
 func enhanceSourceDetection(source string, releaseGroup string, tags []string) []string {
 	var sources []string
-	
+
 	// Add the main source if provided
 	if source != "" {
 		sources = append(sources, source)
 	}
-	
+
 	// Combine all text to search
 	allText := strings.ToUpper(source + " " + releaseGroup + " " + strings.Join(tags, " "))
-	
+
 	// Detect advanced sources
 	detectionPatterns := map[string]string{
 		"REMUX":     "REMUX",
@@ -396,7 +396,7 @@ func enhanceSourceDetection(source string, releaseGroup string, tags []string) [
 		"FULL Disc": "FULL.?DISC|COMPLETE.?DISC",
 		"TV":        "^TV$|\\bTV\\b",
 	}
-	
+
 	for tagName, pattern := range detectionPatterns {
 		if matched, err := regexp.MatchString(pattern, allText); err == nil && matched {
 			// Avoid duplicates
@@ -412,7 +412,7 @@ func enhanceSourceDetection(source string, releaseGroup string, tags []string) [
 			}
 		}
 	}
-	
+
 	return sources
 }
 
@@ -421,7 +421,7 @@ func enhanceSourceDetection(source string, releaseGroup string, tags []string) [
 func enhanceCharacteristics(characteristics []string, codec string) []string {
 	result := make([]string, len(characteristics))
 	copy(result, characteristics)
-	
+
 	// Detect 10-bit from codec names
 	if codec != "" {
 		codecUpper := strings.ToUpper(codec)
@@ -440,7 +440,7 @@ func enhanceCharacteristics(characteristics []string, codec string) []string {
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -551,7 +551,7 @@ func enhanceLanguageDetection(languages []string, releaseGroup string, tags []st
 		}
 
 		// If both VFF and VFQ present with other languages, ensure MULTi is set
-		if (hasVFFTag || hasVFQTag) {
+		if hasVFFTag || hasVFQTag {
 			hasMULTi := false
 			hasNonFrench := false
 			for _, lang := range result {

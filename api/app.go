@@ -40,51 +40,51 @@ type MediaInfoMedia struct {
 }
 
 type MediaInfoTrack struct {
-	Type                     string `json:"@type"`
-	VideoCount               string `json:"VideoCount,omitempty"`
-	AudioCount               string `json:"AudioCount,omitempty"`
-	TextCount                string `json:"TextCount,omitempty"`
-	FileExtension            string `json:"FileExtension,omitempty"`
-	Format                   string `json:"Format,omitempty"`
-	FormatInfo               string `json:"Format_Info,omitempty"`
-	FormatCommercial         string `json:"Format_Commercial,omitempty"`
-	CodecID                  string `json:"CodecID,omitempty"`
-	FileSize                 string `json:"FileSize,omitempty"`
-	Duration                 string `json:"Duration,omitempty"`
-	OverallBitRate           string `json:"OverallBitRate,omitempty"`
-	EncodedApplication       string `json:"Encoded_Application,omitempty"`
-	EncodedLibrary           string `json:"Encoded_Library,omitempty"`
+	Type               string `json:"@type"`
+	VideoCount         string `json:"VideoCount,omitempty"`
+	AudioCount         string `json:"AudioCount,omitempty"`
+	TextCount          string `json:"TextCount,omitempty"`
+	FileExtension      string `json:"FileExtension,omitempty"`
+	Format             string `json:"Format,omitempty"`
+	FormatInfo         string `json:"Format_Info,omitempty"`
+	FormatCommercial   string `json:"Format_Commercial,omitempty"`
+	CodecID            string `json:"CodecID,omitempty"`
+	FileSize           string `json:"FileSize,omitempty"`
+	Duration           string `json:"Duration,omitempty"`
+	OverallBitRate     string `json:"OverallBitRate,omitempty"`
+	EncodedApplication string `json:"Encoded_Application,omitempty"`
+	EncodedLibrary     string `json:"Encoded_Library,omitempty"`
 	// Video specific
-	Width                    string `json:"Width,omitempty"`
-	Height                   string `json:"Height,omitempty"`
-	PixelAspectRatio         string `json:"PixelAspectRatio,omitempty"`
-	DisplayAspectRatio       string `json:"DisplayAspectRatio,omitempty"`
-	FrameRate                string `json:"FrameRate,omitempty"`
-	FrameRateMode            string `json:"FrameRate_Mode,omitempty"`
-	BitRate                  string `json:"BitRate,omitempty"`
-	BitDepth                 string `json:"BitDepth,omitempty"`
-	ChromaSubsampling        string `json:"ChromaSubsampling,omitempty"`
-	ColourPrimaries          string `json:"colour_primaries,omitempty"`
-	TransferCharacteristics  string `json:"transfer_characteristics,omitempty"`
-	MatrixCoefficients       string `json:"matrix_coefficients,omitempty"`
-	HDRFormat                string `json:"HDR_Format,omitempty"`
-	HDRFormatCompatibility   string `json:"HDR_Format_Compatibility,omitempty"`
+	Width                          string `json:"Width,omitempty"`
+	Height                         string `json:"Height,omitempty"`
+	PixelAspectRatio               string `json:"PixelAspectRatio,omitempty"`
+	DisplayAspectRatio             string `json:"DisplayAspectRatio,omitempty"`
+	FrameRate                      string `json:"FrameRate,omitempty"`
+	FrameRateMode                  string `json:"FrameRate_Mode,omitempty"`
+	BitRate                        string `json:"BitRate,omitempty"`
+	BitDepth                       string `json:"BitDepth,omitempty"`
+	ChromaSubsampling              string `json:"ChromaSubsampling,omitempty"`
+	ColourPrimaries                string `json:"colour_primaries,omitempty"`
+	TransferCharacteristics        string `json:"transfer_characteristics,omitempty"`
+	MatrixCoefficients             string `json:"matrix_coefficients,omitempty"`
+	HDRFormat                      string `json:"HDR_Format,omitempty"`
+	HDRFormatCompatibility         string `json:"HDR_Format_Compatibility,omitempty"`
 	MasteringDisplayColorPrimaries string `json:"MasteringDisplay_ColorPrimaries,omitempty"`
 	MasteringDisplayLuminance      string `json:"MasteringDisplay_Luminance,omitempty"`
 	// Audio specific
-	Channels                 string `json:"Channels,omitempty"`
-	ChannelPositions         string `json:"ChannelPositions,omitempty"`
-	ChannelLayout            string `json:"ChannelLayout,omitempty"`
-	SamplingRate             string `json:"SamplingRate,omitempty"`
-	SamplingCount            string `json:"SamplingCount,omitempty"`
-	BitRateMode              string `json:"BitRate_Mode,omitempty"`
-	CompressionMode          string `json:"Compression_Mode,omitempty"`
+	Channels         string `json:"Channels,omitempty"`
+	ChannelPositions string `json:"ChannelPositions,omitempty"`
+	ChannelLayout    string `json:"ChannelLayout,omitempty"`
+	SamplingRate     string `json:"SamplingRate,omitempty"`
+	SamplingCount    string `json:"SamplingCount,omitempty"`
+	BitRateMode      string `json:"BitRate_Mode,omitempty"`
+	CompressionMode  string `json:"Compression_Mode,omitempty"`
 	// Common
-	Language                 string `json:"Language,omitempty"`
-	LanguageString           string `json:"Language_String,omitempty"`
-	Default                  string `json:"Default,omitempty"`
-	Forced                   string `json:"Forced,omitempty"`
-	Title                    string `json:"Title,omitempty"`
+	Language       string `json:"Language,omitempty"`
+	LanguageString string `json:"Language_String,omitempty"`
+	Default        string `json:"Default,omitempty"`
+	Forced         string `json:"Forced,omitempty"`
+	Title          string `json:"Title,omitempty"`
 }
 
 // ============ LOGGING HELPERS ============
@@ -113,7 +113,7 @@ func shortPath(path string) string {
 // Only renames single video files at the root level (consistent with renameVideoInDir)
 func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 	logInfo("renameVideoFilesInTorrent called with torrentName: %s, files count: %d, info.Name: %s, info.Length: %d", torrentName, len(info.Files), info.Name, info.Length)
-	
+
 	// Case 1: Single file torrent (Length is set, Files is empty)
 	if len(info.Files) == 0 && info.Length > 0 {
 		// For single file, the name is in info.Name and is just the filename without extension usually
@@ -159,7 +159,7 @@ func renameVideoFilesInTorrent(info *metainfo.Info, torrentName string) {
 	}
 
 	logInfo("renameVideoFilesInTorrent: multi-file detected - videoFileCount: %d, videoFileIndex: %d", videoFileCount, videoFileIndex)
-	
+
 	// Only rename if there's exactly one video file at root level (consistent with renameVideoInDir)
 	if videoFileCount == 1 && videoFileIndex >= 0 {
 		ext := filepath.Ext(info.Files[videoFileIndex].Path[0])

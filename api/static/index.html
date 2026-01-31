@@ -378,62 +378,62 @@
                             </div>
                         </div>
 
-                        <!-- Step 4: Torrent Config -->
+                        <!-- Step 4: Validation -->
                         <div class="workflow-content hidden" id="step-4">
-                            <h3 class="workflow-title">Configuration du torrent</h3>
-                            <div class="form-group">
-                                <label>Nom du torrent</label>
-                                <input type="text" class="form-control" id="torrentName" placeholder="Nom du fichier torrent">
-                            </div>
-                            <div class="form-group">
-                                <label>Trackers (un par ligne)</label>
-                                <textarea class="form-control" id="trackersInput" rows="4" placeholder="http://tracker.example.com/announce"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <div class="form-check">
-                                    <input type="checkbox" id="torrentPrivate" checked>
-                                    <label for="torrentPrivate">Torrent prive</label>
+                            <h3 class="workflow-title">Validation finale</h3>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                                <!-- Left column: validation info -->
+                                <div>
+                                    <div class="detail-section">
+                                        <h4>Nom du release</h4>
+                                        <div class="form-control" id="validationReleaseName" style="background: var(--bg-tertiary); cursor: not-allowed;"></div>
+                                        <small style="color: var(--text-muted); margin-top: 0.25rem; display: block;">Ce nom sera utilisé pour le fichier torrent et le dossier renommé</small>
+                                    </div>
+
+                                    <div class="detail-section">
+                                        <h4>Fichiers sources</h4>
+                                        <div id="validationSourceFiles" style="font-family: monospace; font-size: 0.85rem; color: var(--text-muted);"></div>
+                                    </div>
+
+                                    <div class="detail-section">
+                                        <h4>Tags La Cale sélectionnés</h4>
+                                        <div id="validationTags" class="validation-tags"></div>
+                                    </div>
+
+                                    <div class="detail-section">
+                                        <h4>Métadonnées extraites</h4>
+                                        <div class="validation-metadata" id="validationMetadata"></div>
+                                    </div>
+
+                                    <div class="detail-section">
+                                        <h4>Présentation (preview)</h4>
+                                        <div class="validation-presentation" id="validationPresentation" style="max-height: 300px; overflow-y: auto;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Right column: MediaInfo text -->
+                                <div>
+                                    <div class="detail-section">
+                                        <h4>MediaInfo</h4>
+                                        <pre id="validationMediaInfo" style="background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; font-size: 0.75rem; max-height: 600px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="creationProgress" class="hidden"><div class="loading"><div class="spinner"></div>Creation en cours...</div></div>
-                            <div id="creationResult" class="hidden"></div>
+
                             <div class="workflow-actions">
-                                <button class="btn btn-secondary" onclick="goToStep(3)" id="btnStep4Back">Precedent</button>
-                                <button class="btn btn-primary" id="btnCreateTorrent">Creer le torrent</button>
+                                <button class="btn btn-secondary" onclick="goToStep(3)">Modifier</button>
+                                <button class="btn btn-primary" id="btnValidationConfirm">Confirmer et créer</button>
                             </div>
                         </div>
 
-                        <!-- Step 5: Validation -->
-                        <!-- Step 5: Validation -->
+                        <!-- Step 5: Torrent Creation -->
                         <div class="workflow-content hidden" id="step-5">
-                            <h3 class="workflow-title">Validation finale</h3>
-                            
-                            <div class="detail-section">
-                                <h4>Nom du release</h4>
-                                <div class="form-group">
-                                    <input type="text" class="form-control" id="validationReleaseName" placeholder="Nom du release">
-                                    <small style="color: var(--text-muted); margin-top: 0.25rem; display: block;">Ce nom sera utilisé pour le fichier torrent et le dossier renommé</small>
-                                </div>
-                            </div>
-
-                            <div class="detail-section">
-                                <h4>Tags La Cale sélectionnés</h4>
-                                <div id="validationTags" class="validation-tags"></div>
-                            </div>
-
-                            <div class="detail-section">
-                                <h4>Métadonnées extraites</h4>
-                                <div class="validation-metadata" id="validationMetadata"></div>
-                            </div>
-
-                            <div class="detail-section">
-                                <h4>Présentation (preview)</h4>
-                                <div class="validation-presentation" id="validationPresentation"></div>
-                            </div>
-
+                            <h3 class="workflow-title">Création du torrent</h3>
+                            <div id="creationProgress" class="hidden"><div class="loading"><div class="spinner"></div>Creation en cours...</div></div>
+                            <div id="creationResult" class="hidden"></div>
                             <div class="workflow-actions">
-                                <button class="btn btn-secondary" onclick="goToStep(4)">Modifier</button>
-                                <button class="btn btn-primary" id="btnValidationConfirm">Confirmer et créer</button>
+                                <button class="btn btn-secondary" onclick="goToStep(4)" id="btnStep5Back">Precedent</button>
                             </div>
                         </div>
 
@@ -447,7 +447,7 @@
                             </div>
                             <div id="uploadStatus" style="margin-top: 1rem;"></div>
                             <div class="workflow-actions">
-                                <button class="btn btn-secondary" onclick="goToStep(5)">Retour</button>
+                                <button class="btn btn-secondary" onclick="goToStep(4)">Retour</button>
                                 <button class="btn btn-success" id="btnFinish">Terminer et uploader sur La Cale</button>
                             </div>
                         </div>
@@ -1624,17 +1624,11 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             document.getElementById('btnStep2Next').addEventListener('click', () => goToStep(3));
             document.getElementById('btnMetadataSearch').addEventListener('click', searchMetadata);
             document.getElementById('metadataQuery').addEventListener('keydown', e => { if (e.key === 'Enter') searchMetadata(); });
-            document.getElementById('btnCreateTorrent').addEventListener('click', createTorrent);
-            document.getElementById('btnValidationConfirm').addEventListener('click', () => goToStep(6));
+            document.getElementById('btnValidationConfirm').addEventListener('click', createTorrent);
             document.getElementById('btnFinish').addEventListener('click', finishWorkflow);
             document.getElementById('btnSaveSettings').addEventListener('click', saveSettings);
             document.getElementById('btnClearHistory').addEventListener('click', clearHistory);
             document.getElementById('btnCreateFromFolder').addEventListener('click', createTorrentFromCurrentFolder);
-
-            // Synchroniser le nom du release depuis l'écran de validation
-            document.getElementById('validationReleaseName').addEventListener('change', function() {
-                document.getElementById('torrentName').value = this.value;
-            });
 
             document.querySelectorAll('.media-type-btn').forEach(btn => {
                 btn.addEventListener('click', () => selectMediaType(btn.dataset.type));
@@ -1831,7 +1825,7 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
 
             // Générer le nom du torrent selon les règles La Cale
             const generatedName = generateReleaseName(state.releaseInfo, state.mediaType);
-            document.getElementById('torrentName').value = generatedName || name.replace(/\.[^/.]+$/, '');
+            state.torrentName = generatedName || name.replace(/\.[^/.]+$/, '');
             document.getElementById('metadataQuery').value = state.releaseInfo.title || '';
 
             updateReleaseTags();
@@ -1952,17 +1946,17 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                         // Régénérer le nom du torrent avec les infos complètes
                         const generatedName = generateReleaseName(state.releaseInfo, state.mediaType);
                         if (generatedName) {
-                            document.getElementById('torrentName').value = generatedName;
+                            state.torrentName = generatedName;
                         }
                     } catch (e) { mediaInfoEl.textContent = 'Erreur: ' + e.message; }
                 }
             } else if (step === 4) {
-                if (state.settings.torrentTrackers) document.getElementById('trackersInput').value = state.settings.torrentTrackers;
-                document.getElementById('creationProgress').classList.add('hidden');
-                document.getElementById('creationResult').classList.add('hidden');
-            } else if (step === 5) {
                 // Écran de validation
                 await populateValidationScreen();
+            } else if (step === 5) {
+                // Écran de création (après validation, affichage seulement)
+                document.getElementById('creationProgress').classList.add('hidden');
+                document.getElementById('creationResult').classList.add('hidden');
             } else if (step === 6) {
                 document.getElementById('createdTorrentPath').textContent = state.createdTorrentPath || '-';
                 document.getElementById('createdNfoPath').textContent = state.createdNfoPath || '-';
@@ -2195,34 +2189,33 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
         }
 
         async function createTorrent() {
-            const btn = document.getElementById('btnCreateTorrent');
+            // Aller au step 5 pour afficher la progression
+            await goToStep(5);
+            
+            const btn = document.getElementById('btnValidationConfirm');
             btn.disabled = true;
-            document.getElementById('btnStep4Back').disabled = true;
+            btn.textContent = 'Création en cours...';
             document.getElementById('creationProgress').classList.remove('hidden');
 
-            const trackers = document.getElementById('trackersInput').value.split('\n').filter(t => t.trim());
-            const isPrivate = document.getElementById('torrentPrivate').checked;
-            const torrentName = document.getElementById('torrentName').value;
-            let nfoContent = document.getElementById('nfoContent').value;
+            const trackers = state.settings.torrentTrackers?.split('\n').filter(t => t.trim()) || [];
+            const isPrivate = true;
+            const torrentName = state.torrentName;
+            let nfoContent = state.nfoContent;
 
             // Remplacer le "Complete name" dans le NFO par le nom généré
             if (torrentName && nfoContent) {
-                // Extraire l'extension du fichier original
                 const originalName = state.selectedFile.split('/').pop();
                 const ext = originalName.match(/\.[^/.]+$/)?.[0] || '';
                 const newCompleteName = torrentName + ext;
-                // Remplacer la ligne "Complete name"
                 nfoContent = nfoContent.replace(
                     /^(Complete name\s*:\s*).*$/m,
                     `$1${newCompleteName}`
                 );
-                // Mettre à jour l'affichage
-                document.getElementById('nfoContent').value = nfoContent;
             }
             state.nfoContent = nfoContent;
 
             try {
-                // Save NFO with updated name
+                // Save NFO
                 const nfoRes = await fetch(`${API_BASE}/api/nfo/save`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2232,7 +2225,7 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 const nfoData = await nfoRes.json();
                 state.createdNfoPath = nfoData.nfoPath;
 
-                // Create torrent with the generated name
+                // Create torrent
                 const torrentRes = await fetch(`${API_BASE}/api/torrent/create`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2261,11 +2254,9 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                             hardlinkPath = hardlinkData.hardlinkPath;
                         } else {
                             hardlinkError = await hardlinkRes.text();
-                            console.warn('Hardlink creation failed:', hardlinkError);
                         }
                     } catch (hlErr) {
                         hardlinkError = hlErr.message;
-                        console.warn('Hardlink creation failed:', hlErr);
                     }
                 }
 
@@ -2278,21 +2269,21 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
 
                 document.getElementById('creationProgress').classList.add('hidden');
                 document.getElementById('creationResult').classList.remove('hidden');
-                let successMsg = 'Torrent et NFO crees avec succes!';
+                let successMsg = 'Torrent et NFO créés avec succès!';
                 if (hardlinkPath) successMsg += `<br><small>Hardlink: ${hardlinkPath}</small>`;
                 else if (hardlinkError) successMsg += `<br><small style="color: var(--warning-text);">Hardlink échoué: ${hardlinkError}</small>`;
                 else if (state.settings.enableHardlink) successMsg += `<br><small style="color: var(--warning-text);">Hardlink: aucun répertoire configuré sur le même disque</small>`;
                 document.getElementById('creationResult').innerHTML = `<div class="alert alert-success">${successMsg}</div>`;
-                showToast('Torrent cree!', 'success');
+                showToast('Torrent créé!', 'success');
                 
-                // Aller à l'écran de validation au lieu de l'upload
-                setTimeout(() => goToStep(5), 1000);
+                // Aller à l'upload
+                setTimeout(() => goToStep(6), 1000);
             } catch (e) {
                 document.getElementById('creationProgress').classList.add('hidden');
                 document.getElementById('creationResult').classList.remove('hidden');
                 document.getElementById('creationResult').innerHTML = `<div class="alert alert-danger">Erreur: ${e.message}</div>`;
                 btn.disabled = false;
-                document.getElementById('btnStep4Back').disabled = false;
+                btn.textContent = 'Confirmer et créer';
                 showToast('Erreur: ' + e.message, 'error');
             }
         }
@@ -2392,9 +2383,40 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
 
         // ============ VALIDATION SCREEN ============
         async function populateValidationScreen() {
-            // Nom du release (éditable)
-            const torrentName = document.getElementById('torrentName').value;
-            document.getElementById('validationReleaseName').value = torrentName;
+            // Générer le nom du release si pas déjà fait
+            if (!state.torrentName) {
+                const generatedName = generateReleaseName(state.releaseInfo, state.mediaType);
+                if (generatedName) {
+                    state.torrentName = generatedName;
+                }
+            }
+            
+            // Nom du release (non éditable)
+            const torrentName = state.torrentName || 'Non défini';
+            document.getElementById('validationReleaseName').textContent = torrentName;
+
+            // Fichiers sources
+            const sourcesContainer = document.getElementById('validationSourceFiles');
+            if (state.selectedFile) {
+                sourcesContainer.textContent = state.selectedFile;
+            } else {
+                sourcesContainer.textContent = 'Aucun fichier sélectionné';
+            }
+
+            // MediaInfo texte
+            const mediaInfoContainer = document.getElementById('validationMediaInfo');
+            mediaInfoContainer.textContent = 'Chargement du MediaInfo...';
+            try {
+                const res = await fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(state.selectedFile)}&format=text`);
+                if (res.ok) {
+                    const text = await res.text();
+                    mediaInfoContainer.textContent = text || 'MediaInfo non disponible';
+                } else {
+                    mediaInfoContainer.textContent = 'Erreur chargement MediaInfo';
+                }
+            } catch (e) {
+                mediaInfoContainer.textContent = 'Erreur: ' + e.message;
+            }
 
             // Tags La Cale - Récupérer depuis le backend
             const tagsContainer = document.getElementById('validationTags');

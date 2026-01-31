@@ -14,12 +14,12 @@ var db *sql.DB
 
 // AppSettings defines the structure of the settings to be saved
 type AppSettings struct {
-	RootPath         string   `json:"rootPath"`
-	TorrentTrackers  string   `json:"torrentTrackers"`
-	IsPrivateTorrent bool     `json:"isPrivateTorrent"`
-	Passkey          string   `json:"passkey"`
-	LaCaleEmail      string   `json:"laCaleEmail"`
-	LaCalePassword   string   `json:"laCalePassword"`
+	RootPath         string `json:"rootPath"`
+	TorrentTrackers  string `json:"torrentTrackers"`
+	IsPrivateTorrent bool   `json:"isPrivateTorrent"`
+	Passkey          string `json:"passkey"`
+	LaCaleEmail      string `json:"laCaleEmail"`
+	LaCalePassword   string `json:"laCalePassword"`
 	// Torrent client selection: "qbittorrent", "transmission", "deluge", "none"
 	TorrentClient string `json:"torrentClient"`
 	// qBittorrent settings
@@ -34,10 +34,10 @@ type AppSettings struct {
 	DelugeUrl      string `json:"delugeUrl"`
 	DelugePassword string `json:"delugePassword"`
 	// Display settings
-	ShowProcessed    bool `json:"showProcessed"`
-	ShowNotProcessed bool `json:"showNotProcessed"`
-	IsFullAuto       bool `json:"isFullAuto"`
-	EnableHardlink   bool `json:"enableHardlink"`
+	ShowProcessed    bool     `json:"showProcessed"`
+	ShowNotProcessed bool     `json:"showNotProcessed"`
+	IsFullAuto       bool     `json:"isFullAuto"`
+	EnableHardlink   bool     `json:"enableHardlink"`
 	HardlinkDirs     []string `json:"hardlinkDirs"`
 }
 
@@ -143,7 +143,7 @@ func getDefaultSettings() AppSettings {
 		// Windows: use C:\
 		defaultRootPath = "C:\\"
 	}
-	
+
 	return AppSettings{
 		RootPath:             defaultRootPath,
 		TorrentTrackers:      "",

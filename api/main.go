@@ -97,7 +97,7 @@ func main() {
 			return
 		}
 		format := r.URL.Query().Get("format")
-		
+
 		// Format text pour NFO, sinon JSON pour parsing
 		if format == "text" {
 			info, err := app.GetMediaInfoText(path)
@@ -294,13 +294,13 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		
+
 		tags, err := app.GetLaCaleTagsPreview(req.MediaType, req.ReleaseInfo)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
 	})
