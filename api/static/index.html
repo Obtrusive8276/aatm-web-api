@@ -872,10 +872,13 @@
             let potentialTitle = cleanName.substring(0, firstTagIndex).replace(/\./g, ' ').replace(/_/g, ' ').replace(/[-()]+$/, '').trim();
             if (potentialTitle) info.title = potentialTitle;
 
-            if (nfoContent) {
+            // Si nfoContent est fourni et est un objet (JSON MediaInfo), le parser
+            if (nfoContent && typeof nfoContent === 'object') {
                 const nfoInfo = parseMediaInfo(nfoContent);
                 Object.assign(info, nfoInfo);
             }
+            // Si c'est une string (ancien format texte), ignorer pour l'instant
+            // Le texte NFO n'est plus utilisé pour le parsing
 
             // Détecter VOSTFR depuis le nom du fichier
             const vostfrMatch = patterns.vostfr.exec(name);
