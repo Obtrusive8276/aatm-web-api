@@ -517,11 +517,11 @@
 
         const state = {
             currentPage: 'files',
-            currentPath: '/media',
+            currentPath: '',
             selectedFile: null,
             selectedIsDir: false,
             selectedMediaType: '',
-            settings: {},
+            settings: { rootPath: '/', showProcessed: false, showNotProcessed: true },
             workflowStep: 1,
             createdTorrentPath: null,
             createdNfoPath: null,
@@ -619,7 +619,6 @@
                     if (base === 'arabic' || base === 'ar') return 'Arabe';
                 }
                 return lang || 'Unknown';
-            };                return lang;
             };
 
             // Fonction pour obtenir le codec audio avec nom commercial
@@ -759,10 +758,10 @@
 
             if (audioTracks.length > 0) {
                 info.audioTracks = audioTracks;
-                // Sauvegarder les langues détectées pour affichage des tags
+                // Remplir audioLanguages avec les langues détectées (pour la génération du nom)
+                info.audioLanguages = audioTracks.map(t => t.language);
+                // Copier pour affichage des tags
                 info.detectedLanguages = audioTracks.map(t => t.language);
-                // Ne pas remplir audioLanguages pour éviter de modifier le nom du torrent
-                info.audioLanguages = [];
                 // Extraire les codecs audio uniques pour les tags
                 const uniqueCodecs = new Set();
                 audioTracks.forEach(t => {
@@ -953,43 +952,65 @@
             // 7. iMAX
             if (info.imax) parts.push('iMAX');
 
-            // 8. Langue (VFF, VFQ, VOSTFR, MULTI, FRENCH, etc. - from detected audioLanguages)
+            // 8. Langue (VOSTFR si Anglais seul, MULTI si Anglais+VFF/VFQ, VFF/VFQ si seuls, etc.)
             if (info.isVOSTFR) {
-                // VOSTFR = Version Originale Sous-Titrée Français
-                // C'est un type de release spécial, utiliser seul
+                // VOSTFR = Version Originale Sous-Titrée Français (explicit tag from filename)
                 parts.push('VOSTFR');
             } else if (info.audioLanguages && info.audioLanguages.length > 0) {
-                const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
-                const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const hasEnglish = info.audioLanguages.some(l => l.toLowerCase() === 'anglais' || l.toLowerCase() === 'english' || l.toLowerCase() === 'en');
+                const hasVFF = info.audioLanguages.some(l => l.toLowerCase() === 'vff');
+                const hasVFQ = info.audioLanguages.some(l => l.toLowerCase() === 'vfq');
                 const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
-                const hasVFF = vffIndex >= 0;
-                const hasVFQ = vfqIndex >= 0;
                 
+                // Non-French languages (excluding Anglais/English)
                 const otherLanguages = info.audioLanguages.filter(l => {
                     const lower = l.toLowerCase();
-                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                    return !['vff', 'vfq', 'français', 'french', 'anglais', 'english', 'en'].includes(lower);
                 });
 
-                // VFF explicitly detected
-                if (hasVFF && otherLanguages.length > 0) {
+                // SPECIAL CASE: Anglais seul → VOSTFR (Version Originale Sous-Titrée Français)
+                if (hasEnglish && !hasVFF && !hasVFQ && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VOSTFR');
+                }
+                // Anglais + VFQ → MULTI.VFQ
+                else if (hasEnglish && hasVFQ && !hasVFF && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasVFQ && otherLanguages.length > 0) {
+                }
+                // Anglais + VFF → MULTI
+                else if (hasEnglish && hasVFF && !hasVFQ && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasVFF || hasVFQ) {
-                    // Only VFF or VFQ → use it directly
-                    parts.push((hasVFF ? 'VFF' : 'VFQ').toUpperCase());
-                } else if (hasFrench && otherLanguages.length > 0) {
-                    // Français (detect VFF/VFQ) + other languages → MULTI
+                }
+                // Anglais + VFF + VFQ → MULTI.VFQ (VFQ takes priority)
+                else if (hasEnglish && hasVFQ && hasVFF && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasFrench) {
-                    // Only Français → detect if VFF or VFQ
+                }
+                // VFF alone
+                else if (hasVFF && !hasVFQ && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VFF');
+                }
+                // VFQ alone
+                else if (hasVFQ && !hasVFF && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VFQ');
+                }
+                // VFF + VFQ → MULTI.VFQ
+                else if (hasVFF && hasVFQ && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('MULTI');
+                }
+                // Français (VFF/VFQ detected from release group) + other → MULTI
+                else if (hasFrench && !hasVFF && !hasVFQ && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                }
+                // Français alone → detect if VFF or VFQ
+                else if (hasFrench && !hasVFF && !hasVFQ && otherLanguages.length === 0) {
                     const frenchVariant = detectFrenchVariant(info.releaseGroup, info.tags);
                     parts.push(frenchVariant.toUpperCase());
-                } else if (otherLanguages.length > 1) {
-                    // Multiple non-French languages → MULTI
+                }
+                // Multiple non-French languages → MULTI
+                else if (otherLanguages.length > 1) {
                     parts.push('MULTI');
-                } else if (otherLanguages.length === 1) {
-                    // Single non-French language
+                }
+                // Single other language
+                else if (otherLanguages.length === 1) {
                     parts.push(otherLanguages[0].toUpperCase());
                 }
             } else if (info.language) {
@@ -1175,36 +1196,56 @@
             // 8. iMAX
             if (info.imax) parts.push('iMAX');
 
-            // 9. Langue (from detected audioLanguages - same logic as movies)
+            // 9. Langue (VOSTFR si Anglais seul, MULTI si Anglais+VFF/VFQ, VFF/VFQ si seuls, etc.)
             if (info.isVOSTFR) {
-                // VOSTFR = Version Originale Sous-Titrée Français
-                // C'est un type de release spécial, utiliser seul
+                // VOSTFR = Version Originale Sous-Titrée Français (explicit tag from filename)
                 parts.push('VOSTFR');
             } else if (info.audioLanguages && info.audioLanguages.length > 0) {
-                const vffIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vff');
-                const vfqIndex = info.audioLanguages.findIndex(l => l.toLowerCase() === 'vfq');
+                const hasEnglish = info.audioLanguages.some(l => l.toLowerCase() === 'anglais' || l.toLowerCase() === 'english' || l.toLowerCase() === 'en');
+                const hasVFF = info.audioLanguages.some(l => l.toLowerCase() === 'vff');
+                const hasVFQ = info.audioLanguages.some(l => l.toLowerCase() === 'vfq');
                 const hasFrench = info.audioLanguages.some(l => l.toLowerCase().includes('français') || l.toLowerCase().includes('french'));
-                const hasVFF = vffIndex >= 0;
-                const hasVFQ = vfqIndex >= 0;
                 
+                // Non-French languages (excluding Anglais/English)
                 const otherLanguages = info.audioLanguages.filter(l => {
                     const lower = l.toLowerCase();
-                    return lower !== 'vff' && lower !== 'vfq' && !lower.includes('français') && !lower.includes('french');
+                    return !['vff', 'vfq', 'français', 'french', 'anglais', 'english', 'en'].includes(lower);
                 });
 
-                // VFF/VFQ explicitly detected
-                if (hasVFF && otherLanguages.length > 0) {
+                // SPECIAL CASE: Anglais seul → VOSTFR (Version Originale Sous-Titrée Français)
+                if (hasEnglish && !hasVFF && !hasVFQ && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VOSTFR');
+                }
+                // Anglais + VFQ → MULTI.VFQ
+                else if (hasEnglish && hasVFQ && !hasVFF && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasVFQ && otherLanguages.length > 0) {
+                }
+                // Anglais + VFF → MULTI
+                else if (hasEnglish && hasVFF && !hasVFQ && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasVFF || hasVFQ) {
-                    // Only VFF or VFQ → use it directly
-                    parts.push((hasVFF ? 'VFF' : 'VFQ').toUpperCase());
-                } else if (hasFrench && otherLanguages.length > 0) {
-                    // Français (detect VFF/VFQ) + other languages → MULTI
+                }
+                // Anglais + VFF + VFQ → MULTI.VFQ (VFQ takes priority)
+                else if (hasEnglish && hasVFQ && hasVFF && otherLanguages.length === 0) {
                     parts.push('MULTI');
-                } else if (hasFrench) {
-                    // Only Français → detect if VFF or VFQ
+                }
+                // VFF alone
+                else if (hasVFF && !hasVFQ && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VFF');
+                }
+                // VFQ alone
+                else if (hasVFQ && !hasVFF && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('VFQ');
+                }
+                // VFF + VFQ → MULTI.VFQ
+                else if (hasVFF && hasVFQ && !hasEnglish && !hasFrench && otherLanguages.length === 0) {
+                    parts.push('MULTI');
+                }
+                // Français (VFF/VFQ detected from release group) + other → MULTI
+                else if (hasFrench && !hasVFF && !hasVFQ && otherLanguages.length > 0) {
+                    parts.push('MULTI');
+                }
+                // Français alone → detect if VFF or VFQ
+                else if (hasFrench && !hasVFF && !hasVFQ && otherLanguages.length === 0) {
                     const frenchVariant = detectFrenchVariant(info.releaseGroup, info.tags);
                     parts.push(frenchVariant.toUpperCase());
                 } else if (otherLanguages.length > 1) {
@@ -1555,7 +1596,10 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
         // ============ UI FUNCTIONS ============
         document.addEventListener('DOMContentLoaded', () => {
             initNavigation();
-            loadSettings();
+            loadSettings().then(() => {
+                // Une fois les settings chargés, naviguer vers la page files
+                navigateTo('files');
+            });
             checkApiStatus();
             setInterval(checkApiStatus, 30000);
 
@@ -1589,7 +1633,13 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             const titles = { files: 'Explorateur de fichiers', create: 'Creer un torrent', settings: 'Parametres', history: 'Historique' };
             document.getElementById('pageTitle').textContent = titles[page];
 
-            if (page === 'files') loadFiles(state.currentPath);
+            if (page === 'files') {
+                // Si currentPath n'est pas défini, utiliser rootPath des settings ou '/'
+                if (!state.currentPath) {
+                    state.currentPath = state.settings.rootPath || '/';
+                }
+                loadFiles(state.currentPath);
+            }
             else if (page === 'settings') loadSettingsForm();
             else if (page === 'history') loadHistory();
             else if (page === 'create') updateWorkflowUI();
@@ -1610,12 +1660,16 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement...</div>';
             try {
+                console.log('Loading files from path:', path);
                 const res = await fetch(`${API_BASE}/api/files?path=${encodeURIComponent(path)}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
                 const files = await res.json();
+                console.log('Files loaded:', files.length);
                 state.currentPath = path;
                 updateBreadcrumb(path);
                 renderFiles(files);
             } catch (e) {
+                console.error('Error loading files:', e);
                 fileList.innerHTML = `<div class="empty-state"><p>Erreur: ${e.message}</p></div>`;
             }
         }
@@ -2332,19 +2386,30 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
         }
 
         async function loadSettings() {
+            console.log('Loading settings...');
             try {
                 const res = await fetch(`${API_BASE}/api/settings`);
                 if (res.ok) {
                     state.settings = await res.json();
-                    if (!state.settings.rootPath) state.settings.rootPath = '/media';
+                    console.log('Settings loaded:', state.settings);
+                    if (!state.settings.rootPath) state.settings.rootPath = '/';
                     state.currentPath = state.settings.rootPath;
-                    loadFiles(state.currentPath);
+                    // Ne pas appeler loadFiles ici, ça sera fait par navigateTo si on est sur la page files
+                } else {
+                    console.warn('Failed to load settings, using defaults');
+                    // Si échec, utiliser un chemin par défaut
+                    state.settings.rootPath = '/';
+                    state.currentPath = '/';
                 }
-            } catch (e) { loadFiles('/media'); }
+            } catch (e) { 
+                console.error('Error loading settings:', e);
+                state.settings.rootPath = '/';
+                state.currentPath = '/';
+            }
         }
 
         function loadSettingsForm() {
-            document.getElementById('settingRootPath').value = state.settings.rootPath || '/media';
+            document.getElementById('settingRootPath').value = state.settings.rootPath || '/';
             document.getElementById('settingTrackers').value = state.settings.torrentTrackers || '';
             // Torrent client selection
             document.getElementById('settingTorrentClient').value = state.settings.torrentClient || 'qbittorrent';

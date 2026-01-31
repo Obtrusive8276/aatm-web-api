@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Data directories (not needed in image)
+data/
+qbt-config/
+torrents/
+
+# Environment files
+.env
+
+# Documentation
+*.md
+DOCKERHUB.md
+README.md
+
+# Build artifacts
+api/aatm-api
+api/aatm-api.exe
+*.exe
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Old code
+source/

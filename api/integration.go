@@ -626,17 +626,12 @@ func findLocalCategory(categories []LocalCategory, mediaType string) (string, []
 		lowerSlug := strings.ToLower(cat.Slug)
 		for _, kw := range keywords {
 			if strings.Contains(lowerSlug, kw) {
+				// Return ID if available, otherwise use Slug as fallback
 				if cat.ID != "" {
 					return cat.ID, cat.Characteristics
 				}
-				// If ID is missing but slug matches, maybe we are at correct category but ID logic failed?
-				// But we expect ID.
-				// For now return Slug and let uploader fail (or we fix logic)
-				// Actually, we want ID. If new JSON has ID, we should use it.
-				// Fallback to Slug just in case
-				// return cat.Slug, cat.Characteristics
-				// The previous code returned Slug.
-				// Now we return ID if possible.
+				// Fallback: use Slug if ID is not set
+				return cat.Slug, cat.Characteristics
 			}
 		}
 	}
@@ -1056,7 +1051,7 @@ func (a *App) UploadToDeluge(torrentPath string, delugeUrl string, password stri
 	if err != nil {
 		return fmt.Errorf("failed to check Deluge connection: %w", err)
 	}
-	if connResp.Result == false {
+	if connected, ok := connResp.Result.(bool); ok && !connected {
 		// Try to connect to first available host
 		hostsResp, _ := makeRequest("web.get_hosts", []interface{}{})
 		if hosts, ok := hostsResp.Result.([]interface{}); ok && len(hosts) > 0 {
@@ -1068,15 +1063,6 @@ func (a *App) UploadToDeluge(torrentPath string, delugeUrl string, password stri
 
 	// 3. Add torrent
 	filename := filepath.Base(torrentPath)
-	_, err = makeRequest("web.add_torrents", []interface{}{
-		[]map[string]interface{}{
-			{
-				"path":    filename,
-				"options": map[string]interface{}{"add_paused": false},
-			},
-		},
-	})
-	// Alternative method: core.add_torrent_file
 	_, err = makeRequest("core.add_torrent_file", []interface{}{
 		filename,
 		b64Torrent,

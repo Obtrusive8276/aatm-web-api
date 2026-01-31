@@ -10,6 +10,11 @@ torrents/
 .DS_Store
 Thumbs.db
 
+# Build artifacts
+api/aatm-api
+api/aatm-api.exe
+*.exe
+
 # Old source code
 source/
 

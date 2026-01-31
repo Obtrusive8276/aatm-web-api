@@ -58,13 +58,6 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	// Log startup
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	logInfo("🚀 Starting AATM API server on port %s", port)
-
 	// Directory operations
 	r.Get("/api/files", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Query().Get("path")
@@ -378,13 +371,17 @@ func main() {
 	})
 
 	// Get port from env or default
-	port = os.Getenv("PORT")
+	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
 	logInfo("🚀 Starting AATM API server on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	logInfo("Server listening on http://localhost:%s", port)
+	err = http.ListenAndServe(":"+port, r)
+	if err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
 
 // Request types

@@ -130,13 +130,22 @@ func (a *App) GetSettings() AppSettings {
 	if settings.DelugePassword == "" {
 		settings.DelugePassword = defaults.DelugePassword
 	}
+	// Les valeurs booléennes ne peuvent pas être testées pour "vide", on utilise les defaults si non définies explicitement
+	// Ces champs seront toujours définis par le frontend, mais on applique les defaults par sécurité
 	return settings
 }
 
 // getDefaultSettings returns the default application settings
 func getDefaultSettings() AppSettings {
+	// Determine default root path based on OS
+	defaultRootPath := "/host" // Linux/Docker default
+	if os.PathSeparator == '\\' {
+		// Windows: use C:\
+		defaultRootPath = "C:\\"
+	}
+	
 	return AppSettings{
-		RootPath:             "/host",
+		RootPath:             defaultRootPath,
 		TorrentTrackers:      "",
 		IsPrivateTorrent:     true,
 		TorrentClient:        "qbittorrent",

@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
@@ -182,7 +181,7 @@ func (a *App) ListDirectory(path string) ([]FileInfo, error) {
 				HasMedia:    hasMedia,
 			})
 		} else {
-			// Check file extension
+			// Check file extension (already lowercased)
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
 			if isMediaFile(ext) {
 				mediaType := "video"
@@ -423,16 +422,6 @@ func formatSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-// getDeviceID returns the device ID of the filesystem containing the path
-func getDeviceID(path string) (uint64, error) {
-	var stat syscall.Stat_t
-	err := syscall.Stat(path, &stat)
-	if err != nil {
-		return 0, err
-	}
-	return stat.Dev, nil
 }
 
 // FindMatchingHardlinkDir finds a hardlink directory on the same device as sourcePath

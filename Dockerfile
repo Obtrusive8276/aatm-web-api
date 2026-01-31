@@ -4,7 +4,7 @@ FROM golang:1.22-bookworm AS builder
 WORKDIR /build
 
 # Copy go mod files first for caching
-COPY api/go.mod ./
+COPY api/go.mod api/go.sum* ./
 RUN go mod download 2>/dev/null || true
 
 # Copy source code
