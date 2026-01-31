@@ -404,6 +404,7 @@
                         </div>
 
                         <!-- Step 5: Validation -->
+                        <!-- Step 5: Validation -->
                         <div class="workflow-content hidden" id="step-5">
                             <h3 class="workflow-title">Validation finale</h3>
                             
@@ -2395,14 +2396,34 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             const torrentName = document.getElementById('torrentName').value;
             document.getElementById('validationReleaseName').value = torrentName;
 
-            // Tags La Cale
+            // Tags La Cale - Récupérer depuis le backend
             const tagsContainer = document.getElementById('validationTags');
-            if (state.laCaleTagIds && state.laCaleTagIds.length > 0) {
-                tagsContainer.innerHTML = state.laCaleTagIds.map(tagId => 
-                    `<div class="validation-tag">${tagId}</div>`
-                ).join('');
-            } else {
-                tagsContainer.innerHTML = '<div style="color: var(--text-muted);">Aucun tag sélectionné</div>';
+            tagsContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement des tags...</div>';
+            
+            try {
+                const tagsRes = await fetch(`${API_BASE}/api/lacale/preview-tags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mediaType: state.mediaType,
+                        releaseInfo: state.releaseInfo
+                    })
+                });
+                
+                if (tagsRes.ok) {
+                    const tagsData = await tagsRes.json();
+                    if (tagsData.tags && tagsData.tags.length > 0) {
+                        tagsContainer.innerHTML = tagsData.tags.map(tag => 
+                            `<div class="validation-tag">${tag}</div>`
+                        ).join('');
+                    } else {
+                        tagsContainer.innerHTML = '<div style="color: var(--text-muted);">Aucun tag sélectionné</div>';
+                    }
+                } else {
+                    tagsContainer.innerHTML = '<div style="color: var(--warning-text);">Erreur chargement tags</div>';
+                }
+            } catch (e) {
+                tagsContainer.innerHTML = '<div style="color: var(--warning-text);">Erreur: ' + e.message + '</div>';
             }
 
             // Métadonnées extraites

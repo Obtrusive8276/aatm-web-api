@@ -285,6 +285,26 @@ func main() {
 	})
 
 	// La Cale integration
+	r.Post("/api/lacale/preview-tags", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			MediaType   string      `json:"mediaType"`
+			ReleaseInfo ReleaseInfo `json:"releaseInfo"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		
+		tags, err := app.GetLaCaleTagsPreview(req.MediaType, req.ReleaseInfo)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
+	})
+
 	r.Post("/api/lacale/upload", func(w http.ResponseWriter, r *http.Request) {
 		var req LaCaleUploadRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

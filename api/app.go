@@ -650,3 +650,22 @@ func (a *App) renameVideoInDir(dirPath, newName string) error {
 	}
 	return nil
 }
+
+// GetLaCaleTagsPreview returns the La Cale tag IDs that would be selected for a given media
+func (a *App) GetLaCaleTagsPreview(mediaType string, releaseInfo ReleaseInfo) ([]string, error) {
+	// Load embedded tags data
+	var meta LocalMetaRoot
+	if err := json.Unmarshal([]byte(tagsData), &meta); err != nil {
+		return nil, fmt.Errorf("failed to parse embedded tags data: %w", err)
+	}
+
+	// Find category and characteristics
+	_, relevantChars := findLocalCategory(meta.Categories, mediaType)
+	if len(relevantChars) == 0 {
+		return []string{}, nil
+	}
+
+	// Find matching tags
+	matchedTags := findLocalMatchingTags(relevantChars, releaseInfo)
+	return matchedTags, nil
+}
