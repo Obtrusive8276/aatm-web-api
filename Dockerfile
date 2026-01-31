@@ -1,37 +1,37 @@
 # Build stage
-FROM golang:1.22-alpine3.19 AS builder
+FROM golang:1.22-bookworm AS builder
 
 WORKDIR /build
 
-# Install build dependencies (only in builder, won't be in final image)
-RUN apk add --no-cache gcc musl-dev
-
 # Copy go mod files first for caching
 COPY api/go.mod ./
-COPY api/go.sum ./
-RUN go mod download
+RUN go mod download 2>/dev/null || true
 
 # Copy source code
 COPY api/*.go ./
 COPY api/static ./static/
 
-# Ensure go.mod/go.sum are up to date
+# Download dependencies
 RUN go mod tidy
 
-# Build with CGO disabled - no GOARCH specified, uses build platform's architecture
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o aatm-api .
+# Build for ARM64 (Raspberry Pi)
+RUN CGO_ENABLED=1 GOOS=linux go build -o aatm-api .
 
 # Runtime stage
 FROM debian:bookworm-slim
 
-# Install all dependencies in a single RUN command to minimize layers
+# Install dependencies (split for better QEMU compatibility)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    mediainfo \
-    qbittorrent-nox \
-    supervisor \
-    ca-certificates && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    apt-get install -y --no-install-recommends mediainfo supervisor && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends qbittorrent-nox && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates || true && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
