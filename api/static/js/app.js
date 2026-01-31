@@ -275,63 +275,70 @@ async function selectFile(name, isDir, mediaType = '') {
 async function startWorkflow(path, name, mediaType = '') {
     AppState.selectedFile = path;
     AppState.workflowStep = 1;
-    AppState.releaseInfo = parseReleaseName(name);
     AppState.resetMetadata();
 
-    // Analyze directory if it's a potential series pack
+    // Parser le nom du fichier
+    const releaseInfo = parseReleaseName(name);
+    
+    // Analyser le répertoire pour détecter les packs séries
+    let directoryAnalysis = null;
+    let detectedType = mediaType;
+    
     try {
-        const analysis = await ApiClient.analyzeDirectory(path);
-        if (analysis.isDirectory && analysis.isSeriesPack) {
-            // It's a series pack
-            if (analysis.detectedSeason) {
-                AppState.releaseInfo.season = analysis.detectedSeason;
+        directoryAnalysis = await ApiClient.analyzeDirectory(path);
+        
+        if (directoryAnalysis.isDirectory && directoryAnalysis.isSeriesPack) {
+            detectedType = 'season';
+            if (directoryAnalysis.detectedSeason) {
+                releaseInfo.season = directoryAnalysis.detectedSeason;
             }
-            AppState.releaseInfo.episodeCount = analysis.episodeCount;
-            selectMediaType('season');
+            releaseInfo.episodeCount = directoryAnalysis.episodeCount;
         } else if (mediaType === 'ebook') {
-            selectMediaType('ebook');
+            detectedType = 'ebook';
         } else if (mediaType === 'game') {
-            selectMediaType('game');
-        } else if (AppState.releaseInfo.season || AppState.releaseInfo.episode) {
-            // Has season or episode info from filename
-            if (AppState.releaseInfo.episode && !AppState.releaseInfo.season) {
-                selectMediaType('episode');
-            } else if (AppState.releaseInfo.season) {
-                selectMediaType('season');
-            } else {
-                selectMediaType('episode');
-            }
+            detectedType = 'game';
+        } else if (releaseInfo.season || releaseInfo.episode) {
+            detectedType = releaseInfo.episode && !releaseInfo.season ? 'episode' : 
+                           releaseInfo.season ? 'season' : 'episode';
         } else {
-            selectMediaType('movie');
+            detectedType = 'movie';
         }
     } catch (e) {
         console.warn('Failed to analyze directory:', e);
-        // Fallback to original detection
+        // Fallback
         if (mediaType === 'ebook') {
-            selectMediaType('ebook');
+            detectedType = 'ebook';
         } else if (mediaType === 'game') {
-            selectMediaType('game');
-        } else if (AppState.releaseInfo.season || AppState.releaseInfo.episode) {
-            if (AppState.releaseInfo.episode && !AppState.releaseInfo.season) {
-                selectMediaType('episode');
-            } else if (AppState.releaseInfo.season) {
-                selectMediaType('season');
-            } else {
-                selectMediaType('episode');
-            }
+            detectedType = 'game';
+        } else if (releaseInfo.season || releaseInfo.episode) {
+            detectedType = releaseInfo.episode && !releaseInfo.season ? 'episode' : 
+                           releaseInfo.season ? 'season' : 'episode';
         } else {
-            selectMediaType('movie');
+            detectedType = 'movie';
         }
     }
+
+    // Créer l'objet Media via la factory
+    const media = AppState.initMedia({
+        path: path,
+        isDirectory: directoryAnalysis?.isDirectory || false,
+        releaseInfo: releaseInfo,
+        directoryAnalysis: directoryAnalysis,
+        forcedType: detectedType
+    });
+
+    // Mettre à jour l'UI du type de média
+    selectMediaType(detectedType);
 
     document.getElementById('selectedSource').innerHTML = `
         <div class="alert alert-success"><strong>Source:</strong> ${name}</div>
         <div class="detail-row"><span class="detail-label">Chemin</span><span class="detail-value" style="word-break:break-all;font-size:0.85rem;">${path}</span></div>
     `;
 
-    const generatedName = generateReleaseName(AppState.releaseInfo, AppState.mediaType);
+    // Générer le nom de release via l'objet Media
+    const generatedName = media ? media.generateName() : generateReleaseName(releaseInfo, AppState.mediaType);
     AppState.torrentName = generatedName || name.replace(/\.[^/.]+$/, '');
-    document.getElementById('metadataQuery').value = AppState.releaseInfo.title || '';
+    document.getElementById('metadataQuery').value = media?.title || releaseInfo.title || '';
 
     updateReleaseTags();
     document.getElementById('btnStep1Next').disabled = false;
@@ -352,7 +359,22 @@ function selectMediaType(type) {
 }
 
 function updateReleaseTags() {
-    const info = AppState.releaseInfo;
+    // Utiliser currentMedia si disponible, sinon releaseInfo
+    const media = AppState.currentMedia;
+    const info = media ? {
+        title: media.title,
+        year: media.year,
+        resolution: media.resolution,
+        source: media.source,
+        codec: media.codec,
+        audioLanguages: media.audioLanguages,
+        audioChannels: media.audioChannels,
+        hdr: media.hdr,
+        releaseGroup: media.releaseGroup,
+        season: media instanceof Serie ? media.season : null,
+        episode: media instanceof Serie ? media.episode : null
+    } : AppState.releaseInfo;
+    
     const tags = [];
     
     if (info.year) tags.push(`<span class="tag year">${info.year}</span>`);
@@ -364,6 +386,8 @@ function updateReleaseTags() {
     if (info.language) tags.push(`<span class="tag language">${info.language}</span>`);
     if (info.hdr) info.hdr.forEach(h => tags.push(`<span class="tag hdr">${h}</span>`));
     if (info.releaseGroup) tags.push(`<span class="tag group">-${info.releaseGroup}</span>`);
+    if (info.season) tags.push(`<span class="tag season">${info.season}</span>`);
+    if (info.episode) tags.push(`<span class="tag episode">${info.episode}</span>`);
     if (info.detectedLanguages) {
         info.detectedLanguages.forEach(l => tags.push(`<span class="tag language">${l}</span>`));
     } else if (info.audioLanguages) {
@@ -484,11 +508,25 @@ async function initStep3() {
 
             const jsonData = await ApiClient.getMediaInfo(AppState.selectedFile);
             
-            const name = AppState.selectedFile.split('/').pop();
-            AppState.releaseInfo = parseReleaseName(name, jsonData);
+            // Parser le MediaInfo JSON
+            const parsedMediaInfo = parseMediaInfo(jsonData);
+            
+            // Appliquer au Media actuel
+            if (AppState.currentMedia) {
+                AppState.currentMedia.applyMediaInfo(parsedMediaInfo);
+                AppState.syncFromMedia();
+            } else {
+                // Fallback: mettre à jour releaseInfo directement
+                const name = AppState.selectedFile.split('/').pop();
+                AppState.releaseInfo = parseReleaseName(name, jsonData);
+            }
+            
             updateReleaseTags();
 
-            const generatedName = generateReleaseName(AppState.releaseInfo, AppState.mediaType);
+            // Régénérer le nom avec les infos MediaInfo
+            const generatedName = AppState.currentMedia 
+                ? AppState.currentMedia.generateName()
+                : generateReleaseName(AppState.releaseInfo, AppState.mediaType);
             if (generatedName) {
                 AppState.torrentName = generatedName;
             }
@@ -552,7 +590,11 @@ async function selectTmdbItem(id) {
         const data = await ApiClient.getTmdbDetails(type, id);
         AppState.setMetadata(id.toString(), data);
 
-        if (data.genres) {
+        // Appliquer au Media actuel
+        if (AppState.currentMedia && typeof AppState.currentMedia.applyTmdbData === 'function') {
+            AppState.currentMedia.applyTmdbData(data);
+            AppState.syncFromMedia();
+        } else if (data.genres) {
             AppState.releaseInfo.genres = data.genres.map(g => g.name);
         }
 
