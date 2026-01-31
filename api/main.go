@@ -3,11 +3,13 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,7 +32,13 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			// Allow same-origin requests and localhost
+			return origin == "" || origin == r.Host ||
+				strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1")
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
@@ -56,6 +64,68 @@ func main() {
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// TMDB Proxy - keeps API key secure on backend
+	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
+	if tmdbAPIKey == "" {
+		tmdbAPIKey = "49d8d37e45764e7c6794ed7dd2d896d4" // Fallback for development
+	}
+
+	r.Get("/api/tmdb/search/{type}", func(w http.ResponseWriter, r *http.Request) {
+		mediaType := chi.URLParam(r, "type")
+		query := r.URL.Query().Get("query")
+		lang := r.URL.Query().Get("language")
+		if lang == "" {
+			lang = "fr-FR"
+		}
+
+		if mediaType != "movie" && mediaType != "tv" {
+			http.Error(w, "type must be 'movie' or 'tv'", http.StatusBadRequest)
+			return
+		}
+
+		url := fmt.Sprintf("https://api.themoviedb.org/3/search/%s?api_key=%s&query=%s&language=%s",
+			mediaType, tmdbAPIKey, query, lang)
+
+		resp, err := http.Get(url)
+		if err != nil {
+			http.Error(w, "TMDB request failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
+
+	r.Get("/api/tmdb/{type}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		mediaType := chi.URLParam(r, "type")
+		id := chi.URLParam(r, "id")
+		lang := r.URL.Query().Get("language")
+		if lang == "" {
+			lang = "fr-FR"
+		}
+
+		if mediaType != "movie" && mediaType != "tv" {
+			http.Error(w, "type must be 'movie' or 'tv'", http.StatusBadRequest)
+			return
+		}
+
+		url := fmt.Sprintf("https://api.themoviedb.org/3/%s/%s?api_key=%s&language=%s",
+			mediaType, id, tmdbAPIKey, lang)
+
+		resp, err := http.Get(url)
+		if err != nil {
+			http.Error(w, "TMDB request failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 	})
 
 	// Directory operations
@@ -87,6 +157,22 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"size": size})
+	})
+
+	// Analyze directory to detect if it's a series pack
+	r.Get("/api/analyze-directory", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Query().Get("path")
+		if path == "" {
+			http.Error(w, "path parameter required", http.StatusBadRequest)
+			return
+		}
+		result, err := app.AnalyzeDirectory(path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	})
 
 	// MediaInfo
@@ -305,6 +391,30 @@ func main() {
 		json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
 	})
 
+	// Get all available tags for a media type, organized by category
+	r.Post("/api/lacale/all-tags", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			MediaType   string      `json:"mediaType"`
+			ReleaseInfo ReleaseInfo `json:"releaseInfo"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		allTags, selectedTags, err := app.GetLaCaleAllTags(req.MediaType, req.ReleaseInfo)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"categories":   allTags,
+			"selectedTags": selectedTags,
+		})
+	})
+
 	r.Post("/api/lacale/upload", func(w http.ResponseWriter, r *http.Request) {
 		var req LaCaleUploadRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -322,6 +432,7 @@ func main() {
 			req.Passkey,
 			req.Email,
 			req.Password,
+			req.CustomTags,
 		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -450,4 +561,5 @@ type LaCaleUploadRequest struct {
 	Passkey     string      `json:"passkey"`
 	Email       string      `json:"email"`
 	Password    string      `json:"password"`
+	CustomTags  []string    `json:"customTags,omitempty"` // Optional: override auto-detected tags
 }

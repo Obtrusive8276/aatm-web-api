@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/anacrolix/torrent/bencode"
@@ -291,15 +293,152 @@ func dirContainsMediaDepth(path string, currentDepth, maxDepth int) bool {
 	return false
 }
 
+// findFirstVideoFile finds the first video file in a directory (sorted alphabetically)
+func findFirstVideoFile(dirPath string) (string, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Sort entries by name
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			// Recurse into subdirectories
+			subFile, err := findFirstVideoFile(filepath.Join(dirPath, entry.Name()))
+			if err == nil && subFile != "" {
+				return subFile, nil
+			}
+		} else {
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if isVideoFile(ext) {
+				return filepath.Join(dirPath, entry.Name()), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no video file found in directory")
+}
+
+// DirectoryAnalysis contains the result of analyzing a directory
+type DirectoryAnalysis struct {
+	IsDirectory    bool     `json:"isDirectory"`
+	IsSeriesPack   bool     `json:"isSeriesPack"`
+	VideoFiles     []string `json:"videoFiles"`
+	FirstVideoFile string   `json:"firstVideoFile"`
+	DetectedSeason string   `json:"detectedSeason,omitempty"`
+	EpisodeCount   int      `json:"episodeCount"`
+}
+
+// AnalyzeDirectory analyzes a directory to detect if it's a series pack
+func (a *App) AnalyzeDirectory(dirPath string) (*DirectoryAnalysis, error) {
+	result := &DirectoryAnalysis{
+		VideoFiles: []string{},
+	}
+
+	fi, err := os.Stat(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	result.IsDirectory = fi.IsDir()
+	if !result.IsDirectory {
+		return result, nil
+	}
+
+	// Collect all video files
+	var collectVideoFiles func(path string, depth int)
+	collectVideoFiles = func(path string, depth int) {
+		if depth > 3 {
+			return
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				collectVideoFiles(filepath.Join(path, entry.Name()), depth+1)
+			} else {
+				ext := strings.ToLower(filepath.Ext(entry.Name()))
+				if isVideoFile(ext) {
+					result.VideoFiles = append(result.VideoFiles, entry.Name())
+				}
+			}
+		}
+	}
+	collectVideoFiles(dirPath, 0)
+
+	// Sort video files
+	sort.Strings(result.VideoFiles)
+
+	if len(result.VideoFiles) > 0 {
+		// Find first video file with full path
+		firstVideo, _ := findFirstVideoFile(dirPath)
+		result.FirstVideoFile = firstVideo
+	}
+
+	// Detect if it's a series pack by checking for episode patterns
+	episodePattern := regexp.MustCompile(`(?i)[SE]\d{1,2}|Episode|Ep\d`)
+	seasonPattern := regexp.MustCompile(`(?i)S(\d{1,2})`)
+
+	detectedSeasons := make(map[string]bool)
+	episodeCount := 0
+
+	for _, file := range result.VideoFiles {
+		if episodePattern.MatchString(file) {
+			episodeCount++
+		}
+		matches := seasonPattern.FindStringSubmatch(file)
+		if len(matches) > 1 {
+			detectedSeasons["S"+matches[1]] = true
+		}
+	}
+
+	// If more than 1 file matches episode pattern, it's likely a series pack
+	result.IsSeriesPack = episodeCount > 1 || len(result.VideoFiles) > 3
+	result.EpisodeCount = episodeCount
+
+	// Get the most common season
+	if len(detectedSeasons) == 1 {
+		for season := range detectedSeasons {
+			result.DetectedSeason = season
+		}
+	} else if len(detectedSeasons) > 1 {
+		result.DetectedSeason = "COMPLETE"
+	}
+
+	return result, nil
+}
+
 // GetMediaInfo executes mediainfo command on the file and returns JSON output
 func (a *App) GetMediaInfo(filePath string) (*MediaInfoResponse, error) {
+	// Check if path is a directory
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	targetFile := filePath
+	if fi.IsDir() {
+		// Find the first video file in the directory
+		firstVideo, err := findFirstVideoFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("no video file found in directory: %w", err)
+		}
+		targetFile = firstVideo
+		logInfo("GetMediaInfo: directory detected, using first video file: %s", shortPath(targetFile))
+	}
+
 	// Check if mediainfo is in PATH
 	path, err := exec.LookPath("mediainfo")
 	if err != nil {
 		return nil, fmt.Errorf("mediainfo not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(path, "--Output=JSON", filePath)
+	cmd := exec.Command(path, "--Output=JSON", targetFile)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("mediainfo execution failed: %w", err)
@@ -315,13 +454,30 @@ func (a *App) GetMediaInfo(filePath string) (*MediaInfoResponse, error) {
 
 // GetMediaInfoText executes mediainfo command and returns text output for NFO
 func (a *App) GetMediaInfoText(filePath string) (string, error) {
+	// Check if path is a directory
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	targetFile := filePath
+	if fi.IsDir() {
+		// Find the first video file in the directory
+		firstVideo, err := findFirstVideoFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("no video file found in directory: %w", err)
+		}
+		targetFile = firstVideo
+		logInfo("GetMediaInfoText: directory detected, using first video file: %s", shortPath(targetFile))
+	}
+
 	// Check if mediainfo is in PATH
 	path, err := exec.LookPath("mediainfo")
 	if err != nil {
 		return "", fmt.Errorf("mediainfo not found in PATH: %w", err)
 	}
 
-	cmd := exec.Command(path, filePath)
+	cmd := exec.Command(path, targetFile)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("mediainfo execution failed: %w", err)
@@ -329,7 +485,7 @@ func (a *App) GetMediaInfoText(filePath string) (string, error) {
 
 	// Replace full path with just filename in "Complete name" line
 	result := string(output)
-	fileName := filepath.Base(filePath)
+	fileName := filepath.Base(targetFile)
 	lines := strings.Split(result, "\n")
 	for i, line := range lines {
 		if strings.HasPrefix(line, "Complete name") {
@@ -556,6 +712,16 @@ func (a *App) CreateHardlink(sourcePath string, destDir string, torrentName stri
 	}
 	destPath := filepath.Join(destDir, baseName)
 
+	// Check if destination already exists
+	if _, err := os.Stat(destPath); err == nil {
+		// File/directory already exists - remove it first
+		logInfo("CreateHardlink: destination already exists, removing: %s", shortPath(destPath))
+		if err := os.RemoveAll(destPath); err != nil {
+			logError("CreateHardlink: failed to remove existing destination: %v", err)
+			return "", fmt.Errorf("failed to remove existing destination: %w", err)
+		}
+	}
+
 	if sourceInfo.IsDir() {
 		// For directories, create directory structure and hardlink all files
 		err = a.hardlinkDirectory(sourcePath, destPath)
@@ -668,4 +834,58 @@ func (a *App) GetLaCaleTagsPreview(mediaType string, releaseInfo ReleaseInfo) ([
 	// Find matching tags - use tag names for display instead of IDs
 	matchedTags := findLocalMatchingTagNames(relevantChars, releaseInfo)
 	return matchedTags, nil
+}
+
+// TagCategory represents a category of tags for the frontend
+type TagCategory struct {
+	Name string    `json:"name"`
+	Slug string    `json:"slug"`
+	Tags []TagInfo `json:"tags"`
+}
+
+// TagInfo represents a single tag with its ID and name
+type TagInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetLaCaleAllTags returns all available tags organized by category, plus the auto-selected tags
+func (a *App) GetLaCaleAllTags(mediaType string, releaseInfo ReleaseInfo) ([]TagCategory, []string, error) {
+	// Load embedded tags data
+	var meta LocalMetaRoot
+	if err := json.Unmarshal([]byte(tagsData), &meta); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse embedded tags data: %w", err)
+	}
+
+	// Find category and characteristics for this media type
+	_, relevantChars := findLocalCategory(meta.Categories, mediaType)
+	if len(relevantChars) == 0 {
+		return []TagCategory{}, []string{}, nil
+	}
+
+	// Build the list of all tags by category
+	var categories []TagCategory
+	for _, char := range relevantChars {
+		var tags []TagInfo
+		for _, t := range char.Tags {
+			if t.ID != "" { // Only include tags with valid IDs
+				tags = append(tags, TagInfo{
+					ID:   t.ID,
+					Name: t.Name,
+				})
+			}
+		}
+		if len(tags) > 0 {
+			categories = append(categories, TagCategory{
+				Name: char.Name,
+				Slug: char.Slug,
+				Tags: tags,
+			})
+		}
+	}
+
+	// Get the auto-selected tag IDs
+	selectedTagIDs := findLocalMatchingTags(relevantChars, releaseInfo)
+
+	return categories, selectedTagIDs, nil
 }

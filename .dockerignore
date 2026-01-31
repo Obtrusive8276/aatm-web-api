@@ -4,6 +4,7 @@
 
 # Data directories (not needed in image)
 data/
+config/
 qbt-config/
 torrents/
 

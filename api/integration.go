@@ -203,7 +203,7 @@ func (a *App) UploadToQBittorrent(torrentPath string, qbitUrl string, username s
 }
 
 // UploadToLaCale uploads the release metadata and files to la-cale.space
-func (a *App) UploadToLaCale(torrentPath string, nfoPath string, title string, description string, tmdbId string, mediaType string, releaseInfo ReleaseInfo, passkey string, email string, password string) error {
+func (a *App) UploadToLaCale(torrentPath string, nfoPath string, title string, description string, tmdbId string, mediaType string, releaseInfo ReleaseInfo, passkey string, email string, password string, customTags []string) error {
 	if passkey == "" {
 		return fmt.Errorf("passkey is missing in settings (required for metadata)")
 	}
@@ -223,10 +223,15 @@ func (a *App) UploadToLaCale(torrentPath string, nfoPath string, title string, d
 		return fmt.Errorf("could not find a matching category for type: %s", mediaType)
 	}
 
-	// 3. Identify Tags
-	matchedTags := findLocalMatchingTags(relevantChars, releaseInfo)
-
-	logInfo("UploadToLaCale: matched %d tags for %s", len(matchedTags), releaseInfo.Title)
+	// 3. Identify Tags - use custom tags if provided, otherwise auto-detect
+	var matchedTags []string
+	if len(customTags) > 0 {
+		matchedTags = customTags
+		logInfo("UploadToLaCale: using %d custom tags for %s", len(matchedTags), releaseInfo.Title)
+	} else {
+		matchedTags = findLocalMatchingTags(relevantChars, releaseInfo)
+		logInfo("UploadToLaCale: matched %d tags for %s", len(matchedTags), releaseInfo.Title)
+	}
 
 	// 4. Authenticate (Get Session)
 	client, err := a.LaCaleLogin(email, password)
@@ -485,7 +490,7 @@ func enhanceAudioCodecDetection(audioCodecs []string, releaseGroup string, tags 
 		}
 		// If no specific Atmos codec found, log it
 		if !alreadyHasAtmosVariant {
-			logWarn(fmt.Sprintf("[ENHANCE AUDIO] Atmos detected in tags but no TrueHD/E-AC3 found"))
+			logWarn("[ENHANCE AUDIO] Atmos detected in tags but no TrueHD/E-AC3 found")
 		}
 	}
 
@@ -541,13 +546,13 @@ func enhanceLanguageDetection(languages []string, releaseGroup string, tags []st
 		// Add VFF if detected and not already present
 		if hasVFF && !hasVFFTag && !hasFrenchat {
 			result = append(result, "VFF")
-			logInfo(fmt.Sprintf("[ENHANCE LANG] Added VFF variant"))
+			logInfo("[ENHANCE LANG] Added VFF variant")
 		}
 
 		// Add VFQ if detected and not already present
 		if hasVFQ && !hasVFQTag && !hasFrenchat {
 			result = append(result, "VFQ")
-			logInfo(fmt.Sprintf("[ENHANCE LANG] Added VFQ variant"))
+			logInfo("[ENHANCE LANG] Added VFQ variant")
 		}
 
 		// If both VFF and VFQ present with other languages, ensure MULTi is set
@@ -566,7 +571,7 @@ func enhanceLanguageDetection(languages []string, releaseGroup string, tags []st
 			}
 			if !hasMULTi && hasNonFrench {
 				result = append(result, "MULTi")
-				logInfo(fmt.Sprintf("[ENHANCE LANG] Added MULTi due to VFF/VFQ + other languages"))
+				logInfo("[ENHANCE LANG] Added MULTi due to VFF/VFQ + other languages")
 			}
 		}
 	}

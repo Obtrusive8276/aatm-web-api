@@ -13,7 +13,7 @@ services:
       - gateway-network
     volumes:
       # Database persistence
-      - ./data:/data
+      - ./config:/config
       # qBittorrent config persistence
       - ./qbt-config:/config/qBittorrent
       # Full filesystem access for navigation
@@ -24,7 +24,7 @@ services:
       - ./torrents:/torrents
     environment:
       - PORT=8080
-      - DATA_DIR=/data
+      - CONFIG_DIR=/config
       - QBT_WEBUI_PORT=8081
       - TZ=${TZ:-Europe/Paris}
     healthcheck:

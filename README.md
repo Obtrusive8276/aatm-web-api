@@ -38,11 +38,9 @@ Il permet de naviguer dans vos fichiers, générer des torrents et NFO, et uploa
 
 | Chemin conteneur | Description |
 |------------------|-------------|
-| `/host` | Système de fichiers hôte (lecture seule) |
-| `/media` | Médias avec accès écriture |
-| `/data` | Base de données et settings |
+| `/userdata` | Système de fichiers hôte (lecture/écriture) |
+| `/config` | Base de données et settings |
 | `/config/qBittorrent` | Configuration qBittorrent |
-| `/torrents` | Fichiers .torrent générés |
 
 ---
 
@@ -55,18 +53,13 @@ services:
     container_name: aatm-web-api
     restart: unless-stopped
     ports:
-      - "8085:8080"      # Interface web
-      - "8086:8081"      # qBittorrent WebUI
-      - "6881:6881"      # Torrent port
-      - "6881:6881/udp"
+      - "8080:8080"      # Interface web
+      - "8081:8081"      # qBittorrent WebUI
     environment:
       - TZ=Europe/Paris
     volumes:
-      - ./data:/data
-      - ./qbt-config:/config/qBittorrent
-      - /:/host:ro
-      - /your/media/path:/media
-      - ./torrents:/torrents
+      - /your/media/path:/userdata    # Vos médias
+      - ./config:/config               # Configuration persistante
 ```
 
 ---
@@ -94,8 +87,10 @@ services:
 
 ## 📝 Notes
 
-- La configuration est persistante dans `/data`
+- La configuration est persistante dans `/config`
 - qBittorrent est intégré dans le conteneur
+- Détection automatique des packs séries
+- Support des tags La Cale avec sélection manuelle
 - Compatible architectures `amd64` (PC/UNRAID) et `arm64` (Raspberry Pi)
 
 ---

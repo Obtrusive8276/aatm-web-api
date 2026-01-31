@@ -39,7 +39,7 @@ WORKDIR /app
 COPY --from=builder /build/aatm-api .
 
 # Create directories
-RUN mkdir -p /data /config/qBittorrent /downloads
+RUN mkdir -p /data /config/qBittorrent /downloads /torrents
 
 # Copy supervisor config
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -52,7 +52,7 @@ EXPOSE 8080 8081
 
 # Environment variables
 ENV PORT=8080
-ENV DATA_DIR=/data
+ENV CONFIG_DIR=/config
 ENV QBT_WEBUI_PORT=8081
 
 # Run supervisor (manages both services)

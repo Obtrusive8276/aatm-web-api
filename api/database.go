@@ -43,10 +43,10 @@ type AppSettings struct {
 
 // InitDB initializes the SQLite database
 func InitDB() {
-	// Use /data directory in container for persistence
-	dataDir := os.Getenv("DATA_DIR")
+	// Use /config directory in container for persistence
+	dataDir := os.Getenv("CONFIG_DIR")
 	if dataDir == "" {
-		dataDir = "/data"
+		dataDir = "/config"
 	}
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {

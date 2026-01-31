@@ -1,5 +1,6 @@
 # Data persistence (contains user settings and credentials)
 data/
+config/
 qbt-config/
 torrents/
 
