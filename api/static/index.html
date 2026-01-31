@@ -217,6 +217,14 @@
         .release-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; }
         .search-row { display: flex; gap: 0.5rem; }
         .search-row input { flex: 1; }
+        .validation-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+        .validation-tag { padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; }
+        .validation-metadata { background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; }
+        .validation-metadata-row { display: flex; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+        .validation-metadata-row:last-child { border-bottom: none; }
+        .validation-metadata-label { font-weight: 500; color: var(--text-secondary); width: 150px; }
+        .validation-metadata-value { color: var(--text-primary); flex: 1; }
+        .validation-presentation { background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; color: var(--text-primary); }
     </style>
 </head>
 <body>
@@ -395,18 +403,51 @@
                             </div>
                         </div>
 
-                        <!-- Step 5: Upload -->
+                        <!-- Step 5: Validation -->
                         <div class="workflow-content hidden" id="step-5">
+                            <h3 class="workflow-title">Validation finale</h3>
+                            
+                            <div class="detail-section">
+                                <h4>Nom du release</h4>
+                                <div class="form-group">
+                                    <input type="text" class="form-control" id="validationReleaseName" placeholder="Nom du release">
+                                    <small style="color: var(--text-muted); margin-top: 0.25rem; display: block;">Ce nom sera utilisé pour le fichier torrent et le dossier renommé</small>
+                                </div>
+                            </div>
+
+                            <div class="detail-section">
+                                <h4>Tags La Cale sélectionnés</h4>
+                                <div id="validationTags" class="validation-tags"></div>
+                            </div>
+
+                            <div class="detail-section">
+                                <h4>Métadonnées extraites</h4>
+                                <div class="validation-metadata" id="validationMetadata"></div>
+                            </div>
+
+                            <div class="detail-section">
+                                <h4>Présentation (preview)</h4>
+                                <div class="validation-presentation" id="validationPresentation"></div>
+                            </div>
+
+                            <div class="workflow-actions">
+                                <button class="btn btn-secondary" onclick="goToStep(4)">Modifier</button>
+                                <button class="btn btn-primary" id="btnValidationConfirm">Confirmer et créer</button>
+                            </div>
+                        </div>
+
+                        <!-- Step 6: Upload -->
+                        <div class="workflow-content hidden" id="step-6">
                             <h3 class="workflow-title">Upload</h3>
                             <div class="detail-section">
-                                <h4>Fichiers crees</h4>
+                                <h4>Fichiers créés</h4>
                                 <div class="detail-row"><span class="detail-label">Torrent</span><span class="detail-value" id="createdTorrentPath">-</span></div>
                                 <div class="detail-row"><span class="detail-label">NFO</span><span class="detail-value" id="createdNfoPath">-</span></div>
                             </div>
                             <div id="uploadStatus" style="margin-top: 1rem;"></div>
                             <div class="workflow-actions">
-                                <button class="btn btn-secondary" onclick="goToStep(4)">Precedent</button>
-                                <button class="btn btn-success" id="btnFinish">Terminer et uploader sur La-Cale</button>
+                                <button class="btn btn-secondary" onclick="goToStep(5)">Retour</button>
+                                <button class="btn btn-success" id="btnFinish">Terminer et uploader sur La Cale</button>
                             </div>
                         </div>
                     </div>
@@ -1580,10 +1621,16 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             document.getElementById('btnMetadataSearch').addEventListener('click', searchMetadata);
             document.getElementById('metadataQuery').addEventListener('keydown', e => { if (e.key === 'Enter') searchMetadata(); });
             document.getElementById('btnCreateTorrent').addEventListener('click', createTorrent);
+            document.getElementById('btnValidationConfirm').addEventListener('click', () => goToStep(6));
             document.getElementById('btnFinish').addEventListener('click', finishWorkflow);
             document.getElementById('btnSaveSettings').addEventListener('click', saveSettings);
             document.getElementById('btnClearHistory').addEventListener('click', clearHistory);
             document.getElementById('btnCreateFromFolder').addEventListener('click', createTorrentFromCurrentFolder);
+
+            // Synchroniser le nom du release depuis l'écran de validation
+            document.getElementById('validationReleaseName').addEventListener('change', function() {
+                document.getElementById('torrentName').value = this.value;
+            });
 
             document.querySelectorAll('.media-type-btn').forEach(btn => {
                 btn.addEventListener('click', () => selectMediaType(btn.dataset.type));
@@ -1905,6 +1952,9 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 document.getElementById('creationProgress').classList.add('hidden');
                 document.getElementById('creationResult').classList.add('hidden');
             } else if (step === 5) {
+                // Écran de validation
+                await populateValidationScreen();
+            } else if (step === 6) {
                 document.getElementById('createdTorrentPath').textContent = state.createdTorrentPath || '-';
                 document.getElementById('createdNfoPath').textContent = state.createdNfoPath || '-';
             }
@@ -2225,6 +2275,8 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
                 else if (state.settings.enableHardlink) successMsg += `<br><small style="color: var(--warning-text);">Hardlink: aucun répertoire configuré sur le même disque</small>`;
                 document.getElementById('creationResult').innerHTML = `<div class="alert alert-success">${successMsg}</div>`;
                 showToast('Torrent cree!', 'success');
+                
+                // Aller à l'écran de validation au lieu de l'upload
                 setTimeout(() => goToStep(5), 1000);
             } catch (e) {
                 document.getElementById('creationProgress').classList.add('hidden');
@@ -2326,6 +2378,72 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             } catch (e) {
                 statusEl.innerHTML = `<div class="alert alert-danger">Erreur: ${e.message}</div>`;
                 showToast('Erreur: ' + e.message, 'error');
+            }
+        }
+
+        // ============ VALIDATION SCREEN ============
+        async function populateValidationScreen() {
+            // Nom du release (éditable)
+            const torrentName = document.getElementById('torrentName').value;
+            document.getElementById('validationReleaseName').value = torrentName;
+
+            // Tags La Cale
+            const tagsContainer = document.getElementById('validationTags');
+            if (state.laCaleTagIds && state.laCaleTagIds.length > 0) {
+                tagsContainer.innerHTML = state.laCaleTagIds.map(tagId => 
+                    `<div class="validation-tag">${tagId}</div>`
+                ).join('');
+            } else {
+                tagsContainer.innerHTML = '<div style="color: var(--text-muted);">Aucun tag sélectionné</div>';
+            }
+
+            // Métadonnées extraites
+            const metadata = document.getElementById('validationMetadata');
+            const info = state.releaseInfo || {};
+            const metadataRows = [
+                { label: 'Titre', value: info.title || '-' },
+                { label: 'Année', value: info.year || '-' },
+                { label: 'Résolution', value: info.resolution || '-' },
+                { label: 'Codec Vidéo', value: info.codec || '-' },
+                { label: 'Source', value: info.source || '-' },
+                { label: 'Langues Audio', value: info.audioLanguages?.join(', ') || '-' },
+                { label: 'Codecs Audio', value: info.audioCodecs?.join(', ') || '-' },
+                { label: 'HDR', value: info.hdr?.join(', ') || '-' },
+                { label: 'Sous-titres', value: info.subtitleLanguages?.join(', ') || '-' },
+                { label: 'Groupe', value: info.releaseGroup || '-' }
+            ];
+            
+            metadata.innerHTML = metadataRows.map(row => 
+                `<div class="validation-metadata-row">
+                    <div class="validation-metadata-label">${row.label}</div>
+                    <div class="validation-metadata-value">${row.value}</div>
+                </div>`
+            ).join('');
+
+            // Présentation (preview)
+            const presentation = document.getElementById('validationPresentation');
+            try {
+                const totalSize = await getTotalSize();
+                const presentationData = await generatePresentation({
+                    tmdbId: state.metadataId,
+                    mediaType: state.mediaType,
+                    releaseInfo: info,
+                    nfoContent: state.nfoContent,
+                    totalSize: totalSize
+                });
+                presentation.textContent = presentationData;
+            } catch (e) {
+                presentation.textContent = 'Erreur génération présentation: ' + e.message;
+            }
+        }
+
+        async function getTotalSize() {
+            try {
+                const res = await fetch(`${API_BASE}/api/directory-size?path=${encodeURIComponent(state.selectedFile)}`);
+                const data = await res.json();
+                return data.size;
+            } catch (e) {
+                return null;
             }
         }
 
