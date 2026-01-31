@@ -392,7 +392,7 @@
                                     </div>
 
                                     <div class="detail-section">
-                                        <h4>Fichiers sources</h4>
+                                        <h4>Futur emplacement</h4>
                                         <div id="validationSourceFiles" style="font-family: monospace; font-size: 0.85rem; color: var(--text-muted);"></div>
                                     </div>
 
@@ -2395,21 +2395,58 @@ ${headerImage ? `[img]${headerImage}[/img]` : ''}
             const torrentName = state.torrentName || 'Non défini';
             document.getElementById('validationReleaseName').textContent = torrentName;
 
-            // Fichiers sources
+            // Futur emplacement (avec nouveau nom de fichier)
             const sourcesContainer = document.getElementById('validationSourceFiles');
-            if (state.selectedFile) {
+            if (state.selectedFile && state.torrentName) {
+                // Calculer le futur chemin
+                const originalName = state.selectedFile.split('/').pop();
+                const isDir = !originalName.includes('.') || originalName.lastIndexOf('.') < originalName.length - 5;
+                let futureFileName = state.torrentName;
+                if (!isDir) {
+                    const ext = originalName.match(/\.[^/.]+$/)?.[0] || '';
+                    futureFileName = state.torrentName + ext;
+                }
+                
+                // Si hardlink est activé, calculer le chemin de destination
+                if (state.settings.enableHardlink && state.settings.hardlinkDirs && state.settings.hardlinkDirs.length > 0) {
+                    const hardlinkDir = state.settings.hardlinkDirs[0]; // Premier répertoire configuré
+                    const futurePath = hardlinkDir + '/' + futureFileName;
+                    sourcesContainer.innerHTML = `<div style="margin-bottom: 0.5rem;"><strong>Source:</strong> ${state.selectedFile}</div><div><strong>Destination:</strong> ${futurePath}</div>`;
+                } else {
+                    // Pas de hardlink, le fichier sera renommé sur place
+                    const parentDir = state.selectedFile.substring(0, state.selectedFile.lastIndexOf('/'));
+                    const futurePath = parentDir + '/' + futureFileName;
+                    sourcesContainer.innerHTML = `<div style="margin-bottom: 0.5rem;"><strong>Source:</strong> ${state.selectedFile}</div><div><strong>Nouveau nom:</strong> ${futurePath}</div>`;
+                }
+            } else if (state.selectedFile) {
                 sourcesContainer.textContent = state.selectedFile;
             } else {
                 sourcesContainer.textContent = 'Aucun fichier sélectionné';
             }
 
-            // MediaInfo texte
+            // MediaInfo texte (avec le nouveau nom de fichier)
             const mediaInfoContainer = document.getElementById('validationMediaInfo');
             mediaInfoContainer.textContent = 'Chargement du MediaInfo...';
             try {
                 const res = await fetch(`${API_BASE}/api/mediainfo?path=${encodeURIComponent(state.selectedFile)}&format=text`);
                 if (res.ok) {
-                    const text = await res.text();
+                    let text = await res.text();
+                    // Remplacer les \n littéraux par de vrais sauts de ligne
+                    text = text.replace(/\\n/g, '\n');
+                    
+                    // Remplacer TOUS les "Complete name" par le nouveau nom de fichier
+                    if (state.torrentName) {
+                        text = text.replace(
+                            /^(Complete name\s*:\s*)(.*)$/gm,
+                            (match, prefix, oldPath) => {
+                                // Extraire l'extension du fichier original
+                                const oldFileName = oldPath.split(/[/\\]/).pop();
+                                const ext = oldFileName.match(/\.[^/.]+$/)?.[0] || '';
+                                return prefix + state.torrentName + ext;
+                            }
+                        );
+                    }
+                    
                     mediaInfoContainer.textContent = text || 'MediaInfo non disponible';
                 } else {
                     mediaInfoContainer.textContent = 'Erreur chargement MediaInfo';

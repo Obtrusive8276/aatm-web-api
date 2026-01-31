@@ -651,7 +651,7 @@ func (a *App) renameVideoInDir(dirPath, newName string) error {
 	return nil
 }
 
-// GetLaCaleTagsPreview returns the La Cale tag IDs that would be selected for a given media
+// GetLaCaleTagsPreview returns the La Cale tag names (for display) that would be selected for a given media
 func (a *App) GetLaCaleTagsPreview(mediaType string, releaseInfo ReleaseInfo) ([]string, error) {
 	// Load embedded tags data
 	var meta LocalMetaRoot
@@ -665,7 +665,7 @@ func (a *App) GetLaCaleTagsPreview(mediaType string, releaseInfo ReleaseInfo) ([
 		return []string{}, nil
 	}
 
-	// Find matching tags
-	matchedTags := findLocalMatchingTags(relevantChars, releaseInfo)
+	// Find matching tags - use tag names for display instead of IDs
+	matchedTags := findLocalMatchingTagNames(relevantChars, releaseInfo)
 	return matchedTags, nil
 }

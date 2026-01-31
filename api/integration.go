@@ -649,6 +649,28 @@ func findLocalMatchingTags(characteristics []LocalCharacteristic, info ReleaseIn
 		}
 	}
 
+	matchTags(characteristics, info, addTag)
+	return matched
+}
+
+// findLocalMatchingTagNames returns tag names (for display) instead of IDs
+func findLocalMatchingTagNames(characteristics []LocalCharacteristic, info ReleaseInfo) []string {
+	matched := []string{}
+	unique := make(map[string]bool)
+
+	addTag := func(t LocalTag) {
+		if !unique[t.ID] && t.ID != "" {
+			unique[t.ID] = true
+			matched = append(matched, t.Name)
+		}
+	}
+
+	matchTags(characteristics, info, addTag)
+	return matched
+}
+
+// matchTags is the common matching logic used by both findLocalMatchingTags and findLocalMatchingTagNames
+func matchTags(characteristics []LocalCharacteristic, info ReleaseInfo, addTag func(LocalTag)) {
 	for _, char := range characteristics {
 		slug := strings.ToLower(char.Slug)
 		tagsFoundForChar := false
@@ -795,8 +817,6 @@ func findLocalMatchingTags(characteristics []LocalCharacteristic, info ReleaseIn
 			}
 		}
 	}
-
-	return matched
 }
 
 // ==================== TRANSMISSION INTEGRATION ====================
