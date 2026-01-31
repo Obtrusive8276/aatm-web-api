@@ -113,9 +113,7 @@ async function loadFiles(path) {
     fileList.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement...</div>';
     
     try {
-        console.log('Loading files from path:', path);
         const files = await ApiClient.getFiles(path);
-        console.log('Files loaded:', files.length);
         
         AppState.currentPath = path;
         AppState.currentFiles = files;
@@ -351,11 +349,27 @@ function createTorrentFromCurrentFolder() {
     startWorkflow(path, name, '');
 }
 
-function selectMediaType(type) {
+async function selectMediaType(type) {
     AppState.mediaType = type;
     document.querySelectorAll('.media-type-btn').forEach(btn => 
         btn.classList.toggle('active', btn.dataset.type === type)
     );
+
+    // Si le media courant est une série, forcer isPack selon le type sélectionné
+    if (AppState.currentMedia instanceof Serie) {
+        if (type === 'episode') {
+            AppState.currentMedia.isPack = false;
+        } else if (type === 'season') {
+            AppState.currentMedia.isPack = true;
+        }
+    }
+
+    // Télécharger les tags pour ce type
+    try {
+        window.LaCaleTagCache = await ApiClient.getAllLaCaleTags({ mediaType: type });
+    } catch (e) {
+        console.error('Erreur chargement tags:', e);
+    }
 }
 
 function updateReleaseTags() {
@@ -881,6 +895,17 @@ async function uploadToLaCale() {
     statusEl.innerHTML = '<div class="loading"><div class="spinner"></div>Generation de la description et upload...</div>';
 
     try {
+        const media = AppState.currentMedia;
+
+        // Forcer la récupération des tags dynamiques juste avant l'envoi
+        if (media && typeof media.getAutoTags === 'function') {
+            const autoTags = await media.getAutoTags();
+            if (autoTags && autoTags.length > 0) {
+                media.selectedTagIds = new Set(autoTags);
+                AppState.selectedTagIds = new Set(autoTags);
+            }
+        }
+        
         let totalSize = null;
         try {
             const sizeData = await ApiClient.getDirectorySize(AppState.selectedFile);
@@ -892,30 +917,41 @@ async function uploadToLaCale() {
         
         // Si pas de description stockée, la générer
         if (!description) {
-            description = await generatePresentation({
-                releaseInfo: AppState.releaseInfo,
-                tmdbId: AppState.tmdbId,
-                mediaType: AppState.mediaType,
-                nfoContent: AppState.nfoContent,
-                totalSize
-            });
+            if (media && typeof media.toPresentation === 'function') {
+                description = media.toPresentation(totalSize);
+            } else {
+                description = await generatePresentation({
+                    releaseInfo: AppState.releaseInfo,
+                    tmdbId: AppState.tmdbId,
+                    mediaType: AppState.mediaType,
+                    nfoContent: AppState.nfoContent,
+                    totalSize
+                });
+            }
         }
 
         const torrentName = AppState.torrentName || AppState.selectedFile.split('/').pop();
 
-        await ApiClient.uploadToLaCale({
+        // Préparer les données avec currentMedia ou releaseInfo
+        const uploadData = {
             torrentPath: AppState.createdTorrentPath,
             nfoPath: AppState.createdNfoPath,
             title: torrentName,
             description: description,
-            tmdbId: AppState.tmdbId,
-            mediaType: AppState.mediaType,
-            releaseInfo: AppState.releaseInfo,
+            tmdbId: media?.tmdbId || media?.externalId || AppState.tmdbId,
+            mediaType: media?.type || AppState.mediaType,
             passkey: AppState.settings.passkey,
             email: AppState.settings.laCaleEmail,
             password: AppState.settings.laCalePassword,
-            customTags: AppState.selectedTagIds ? Array.from(AppState.selectedTagIds) : []
-        });
+            customTags: media?.selectedTagIds 
+                ? Array.from(media.selectedTagIds) 
+                : (AppState.selectedTagIds ? Array.from(AppState.selectedTagIds) : [])
+        };
+        
+        // Ajouter releaseInfo pour compatibilité backend
+        uploadData.releaseInfo = media ? media.toJSON() : AppState.releaseInfo;
+
+        await ApiClient.uploadToLaCale(uploadData);
 
         statusEl.innerHTML = '<div class="alert alert-success">Upload La-Cale reussi!</div>';
         showToast('Upload La-Cale OK!', 'success');
@@ -928,8 +964,13 @@ async function uploadToLaCale() {
 // ============ VALIDATION ============
 
 async function populateValidationScreen() {
+    // Utiliser currentMedia si disponible
+    const media = AppState.currentMedia;
+    
     if (!AppState.torrentName) {
-        const generatedName = generateReleaseName(AppState.releaseInfo, AppState.mediaType);
+        const generatedName = media 
+            ? media.generateName() 
+            : generateReleaseName(AppState.releaseInfo, AppState.mediaType);
         if (generatedName) {
             AppState.torrentName = generatedName;
         }
@@ -972,13 +1013,43 @@ async function populateValidationScreen() {
     tagsContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement des tags...</div>';
     
     try {
-        const tagsData = await ApiClient.getAllLaCaleTags({
+        // Préparer les infos pour la requête tags
+        const mediaInfo = media ? {
+            mediaType: media.type,
+            resolution: media.resolution,
+            source: media.source,
+            audioLanguages: media.audioLanguages,
+            hdr: media.hdr,
+            codec: media.codec
+        } : {
             mediaType: AppState.mediaType,
             releaseInfo: AppState.releaseInfo
-        });
+        };
+        
+        const tagsData = await ApiClient.getAllLaCaleTags(mediaInfo);
+        
+        // Utiliser les tags auto de l'objet Media si disponibles
+        let autoTags = tagsData.selectedTags || [];
+        if (media && typeof media.getAutoTags === 'function') {
+            // Gérer getAutoTags asynchrone
+            const mediaTagsResult = media.getAutoTags();
+            const mediaTags = (mediaTagsResult instanceof Promise) 
+                ? await mediaTagsResult 
+                : mediaTagsResult;
+            
+
+            if (mediaTags && mediaTags.length > 0) {
+                autoTags = [...new Set([...autoTags, ...mediaTags.map(String)])];
+            }
+        }
         
         // Stocker les tags sélectionnés dans AppState
-        AppState.selectedTagIds = new Set(tagsData.selectedTags || []);
+        AppState.selectedTagIds = new Set(autoTags);
+        
+        // Synchroniser avec currentMedia
+        if (media) {
+            media.selectedTagIds = new Set(autoTags);
+        }
         
         if (tagsData.categories && tagsData.categories.length > 0) {
             tagsContainer.innerHTML = tagsData.categories.map(category => `
@@ -1003,17 +1074,24 @@ async function populateValidationScreen() {
         tagsContainer.innerHTML = '<div style="color: var(--warning-text);">Erreur: ' + e.message + '</div>';
     }
 
-    // Métadonnées (version compacte)
+    // Métadonnées (version compacte) - utiliser media ou releaseInfo
     const metadata = document.getElementById('validationMetadata');
-    const info = AppState.releaseInfo || {};
-    const metadataRows = [
-        { label: 'Titre', value: info.title || '-' },
-        { label: 'Année', value: info.year || '-' },
-        { label: 'Résolution', value: info.resolution || '-' },
-        { label: 'Source', value: info.source || '-' },
-        { label: 'Codec', value: info.codec || '-' },
-        { label: 'Audio', value: info.audioLanguages?.join(', ') || '-' },
-        { label: 'Groupe', value: info.releaseGroup || '-' }
+    const metadataRows = media ? [
+        { label: 'Titre', value: media.title || '-' },
+        { label: 'Année', value: media.year || '-' },
+        { label: 'Résolution', value: media.resolution || '-' },
+        { label: 'Source', value: media.source || '-' },
+        { label: 'Codec', value: media.codec || '-' },
+        { label: 'Audio', value: media.audioLanguages?.join(', ') || '-' },
+        { label: 'Groupe', value: media.releaseGroup || '-' }
+    ] : [
+        { label: 'Titre', value: AppState.releaseInfo.title || '-' },
+        { label: 'Année', value: AppState.releaseInfo.year || '-' },
+        { label: 'Résolution', value: AppState.releaseInfo.resolution || '-' },
+        { label: 'Source', value: AppState.releaseInfo.source || '-' },
+        { label: 'Codec', value: AppState.releaseInfo.codec || '-' },
+        { label: 'Audio', value: AppState.releaseInfo.audioLanguages?.join(', ') || '-' },
+        { label: 'Groupe', value: AppState.releaseInfo.releaseGroup || '-' }
     ];
     
     metadata.innerHTML = metadataRows.map(row => 
@@ -1023,7 +1101,7 @@ async function populateValidationScreen() {
         </div>`
     ).join('');
 
-    // Présentation - Générer et stocker le BBCode
+    // Présentation - Générer via l'objet Media ou la fonction legacy
     const presentationPreview = document.getElementById('presentationPreview');
     const presentationEditor = document.getElementById('presentationEditor');
     const toggleBtn = document.getElementById('btnTogglePresentationView');
@@ -1032,13 +1110,21 @@ async function populateValidationScreen() {
     
     try {
         const totalSize = await getTotalSize();
-        const presentationBBCode = await generatePresentation({
-            tmdbId: AppState.metadataId,
-            mediaType: AppState.mediaType,
-            releaseInfo: info,
-            nfoContent: AppState.nfoContent,
-            totalSize: totalSize
-        });
+        
+        let presentationBBCode;
+        if (media && typeof media.toPresentation === 'function') {
+            // Utiliser la méthode de l'objet Media
+            presentationBBCode = media.toPresentation(totalSize);
+        } else {
+            // Fallback à l'ancienne fonction
+            presentationBBCode = await generatePresentation({
+                tmdbId: AppState.metadataId,
+                mediaType: AppState.mediaType,
+                releaseInfo: AppState.releaseInfo,
+                nfoContent: AppState.nfoContent,
+                totalSize: totalSize
+            });
+        }
         
         // Stocker le BBCode dans AppState pour l'upload
         AppState.presentationBBCode = presentationBBCode;
@@ -1109,11 +1195,9 @@ async function finishWorkflow() {
 // ============ SETTINGS ============
 
 async function loadSettings() {
-    console.log('Loading settings...');
     try {
         const settings = await ApiClient.getSettings();
         AppState.settings = settings;
-        console.log('Settings loaded:', AppState.settings);
         if (!AppState.settings.rootPath) AppState.settings.rootPath = '/';
         AppState.currentPath = AppState.settings.rootPath;
     } catch (e) { 

@@ -3,6 +3,12 @@
  * Représente un film (movie)
  */
 
+// Patch Film.js pour Node.js : injecte Media dans le scope global si besoin
+if (typeof global !== 'undefined' && !global.Media) {
+  const { Media } = require('./Media');
+  global.Media = Media;
+}
+
 class Film extends Media {
     /**
      * @param {Object} options - Options de construction
@@ -84,56 +90,208 @@ class Film extends Media {
         return `${baseName}-${team}`;
     }
     
-    /**
-     * Récupère les tags automatiques pour La Cale
-     * @returns {Array<number>}
-     */
-    getAutoTags() {
+    async getAutoTags() {
+        // Fetch and cache tag list if not already cached
+        if (!window.LaCaleTagCache) {
+            window.LaCaleTagCache = await ApiClient.getAllLaCaleTags({ mediaType: this.type });
+        }
+        const tagCache = window.LaCaleTagCache;
         const tags = [];
-        
+
+        // Helper: find tag ID by name (case-insensitive, accent-insensitive)
+        function findTagIdByName(name, category = null) {
+            if (!name) return null;
+            const norm = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+            const aliases = {
+                'x264': ['avc/h264/x264', 'avc', 'h264'],
+                'ac3': ['ac3', 'dolby digital'],
+                'francais': ['french', 'français', 'fr'],
+                'french': ['francais', 'français', 'fr'],
+                'anglais': ['english', 'en'],
+                'english': ['anglais', 'en'],
+                'web-dl': ['web-dl', 'webdl'],
+                'vff': ['vff'],
+                'vfq': ['vfq'],
+                'multi': ['multi'],
+                '1080p': ['1080p (full hd)', '1080p'],
+                '2160p': ['2160p (4k)', '2160p', '4k'],
+                '720p': ['720p (hd)', '720p'],
+                'sd': ['sd'],
+                'remux': ['remux'],
+                'bluray': ['bluray', 'blu-ray'],
+                'mkv': ['mkv'],
+                'mp4': ['mp4'],
+                'avi': ['avi'],
+                'iso': ['iso'],
+                'autres': ['autres', 'autres extensions', 'autres sous-titres', 'autres audio'],
+            };
+            const categoryVariants = {
+                'Source': ['Source', 'Source / Type'],
+                'Source / Type': ['Source', 'Source / Type'],
+                'Langue audio': ['Langue audio', 'Langues audio'],
+                'Langues audio': ['Langue audio', 'Langues audio'],
+                'Codec vidéo': ['Codec vidéo'],
+                'Codec audio': ['Codec audio'],
+                'Extension': ['Extension', 'Extensions'],
+                'Sous-titres': ['Sous-titres', 'Sous titres'],
+                'Résolution': ['Résolution', 'Qualité / Résolution'],
+                'Qualité / Résolution': ['Résolution', 'Qualité / Résolution'],
+                'Genre': ['Genre', 'Genres'],
+                'HDR': ['HDR', 'Caractéristiques vidéo'],
+                'Caractéristiques vidéo': ['HDR', 'Caractéristiques vidéo'],
+                'Type': ['Type'],
+            };
+            const normName = norm(name);
+            // 1. Recherche stricte et alias dans la catégorie cible (et variantes)
+            let cats = tagCache.categories;
+            if (category && categoryVariants[category]) {
+                cats = cats.filter(cat => categoryVariants[category].some(v => norm(cat.name) === norm(v)));
+            } else if (category) {
+                cats = cats.filter(cat => norm(cat.name) === norm(category));
+            }
+            for (const cat of cats) {
+                for (const tag of cat.tags) {
+                    if (norm(tag.name) === normName) return tag.id;
+                    if (aliases[normName] && aliases[normName].some(alias => norm(tag.name).includes(norm(alias)))) return tag.id;
+                }
+            }
+            // 2. Recherche partielle dans la catégorie cible
+            for (const cat of cats) {
+                for (const tag of cat.tags) {
+                    if (norm(tag.name).includes(normName)) return tag.id;
+                }
+            }
+            // 3. Fallback : recherche stricte, alias et partielle sur toutes les catégories
+            for (const cat of tagCache.categories) {
+                for (const tag of cat.tags) {
+                    if (norm(tag.name) === normName) return tag.id;
+                    if (aliases[normName] && aliases[normName].some(alias => norm(tag.name).includes(norm(alias)))) return tag.id;
+                    if (norm(tag.name).includes(normName)) return tag.id;
+                }
+            }
+            return null;
+        }
+
         // Type: Film
-        tags.push(1); // ID pour "Film" dans tags_data.go
-        
+        tags.push(findTagIdByName('Film', 'Type'));
+
         // Résolution
-        const resMap = {
-            '2160p': 5, '4k': 5,
-            '1080p': 4,
-            '720p': 3,
-            '480p': 2
-        };
-        const resLower = (this.resolution || '').toLowerCase();
-        if (resMap[resLower]) tags.push(resMap[resLower]);
-        
+        if (this.resolution) {
+            const resId = findTagIdByName(this.resolution, 'Résolution');
+            if (resId) tags.push(resId);
+        }
+
         // Source
-        const sourceMap = {
-            'bluray': 10, 'blu-ray': 10,
-            'remux': 11,
-            'web-dl': 12, 'webdl': 12,
-            'webrip': 13,
-            'hdtv': 14,
-            'dvdrip': 15
-        };
-        const srcLower = (this.source || '').toLowerCase();
-        if (sourceMap[srcLower]) tags.push(sourceMap[srcLower]);
-        
-        // Langue
-        if (this.isVOSTFR) {
-            tags.push(20); // VOSTFR
-        } else {
-            const hasVFF = this.audioLanguages.some(l => l.toLowerCase() === 'vff' || l.toLowerCase().includes('français'));
-            const hasMulti = this.audioLanguages.length > 1;
-            if (hasMulti) tags.push(22); // MULTI
-            else if (hasVFF) tags.push(21); // VFF
+        if (this.source) {
+            const srcId = findTagIdByName(this.source, 'Source');
+            if (srcId) tags.push(srcId);
         }
-        
-        // HDR
+
+        // Codec vidéo
+        if (this.codec) {
+            const codecId = findTagIdByName(this.codec, 'Codec vidéo');
+            if (codecId) tags.push(codecId);
+        }
+
+        // HDR, 3D, IMAX
         if (this.hdr && this.hdr.length > 0) {
-            if (this.hdr.some(h => h.includes('DV') || h.includes('Dolby'))) tags.push(30); // Dolby Vision
-            if (this.hdr.some(h => h.includes('HDR10+'))) tags.push(31); // HDR10+
-            else if (this.hdr.some(h => h.includes('HDR'))) tags.push(32); // HDR
+            this.hdr.forEach(h => {
+                const hdrId = findTagIdByName(h, 'HDR');
+                if (hdrId) tags.push(hdrId);
+            });
         }
-        
-        return tags;
+        if (this.threeD) {
+            const threeDId = findTagIdByName('3D', 'HDR');
+            if (threeDId) tags.push(threeDId);
+        }
+        if (this.imax) {
+            const imaxId = findTagIdByName('IMAX', 'HDR');
+            if (imaxId) tags.push(imaxId);
+        }
+
+        // Codec audio
+        if (this.audioCodecs && this.audioCodecs.length > 0) {
+            this.audioCodecs.forEach(c => {
+                const audioId = findTagIdByName(c, 'Codec audio');
+                if (audioId) tags.push(audioId);
+            });
+        }
+
+        // Langues audio
+        if (this.audioLanguages && this.audioLanguages.length > 0) {
+            this.audioLanguages.forEach(l => {
+                const langId = findTagIdByName(l, 'Langue audio');
+                if (langId) tags.push(langId);
+            });
+        }
+
+        // Sous-titres
+        if (this.subtitles && this.subtitles.length > 0) {
+            this.subtitles.forEach(s => {
+                const subId = findTagIdByName(s, 'Sous-titres');
+                if (subId) tags.push(subId);
+            });
+        }
+
+        // Extension
+        let ext = this.extension;
+        if (!ext && this.container) ext = this.container;
+        if (!ext && this.path) {
+            const match = this.path.match(/\.([a-z0-9]+)$/i);
+            if (match) ext = match[1];
+        }
+        if (ext) {
+            const extId = findTagIdByName(ext, 'Extension');
+            if (extId) tags.push(extId);
+        }
+
+        // Genres (recherche stricte/alias uniquement, pas de fallback partiel)
+        if (this.genres && this.genres.length > 0) {
+            // Cas spécial Téléfilm : ne sélectionner que si le seul genre est Téléfilm (ou alias strict)
+            const norm = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+            const aliases = {
+                'sf': ['science-fiction', 'sci-fi'],
+                'comedy': ['comédie', 'comedy'],
+                'telefilm': ['téléfilm', 'telefilm'],
+                // Ajoute d'autres alias si besoin
+            };
+            const normGenres = this.genres.map(g => norm(g));
+            // Si Téléfilm présent, il doit être le seul genre pour être tagué
+            if (normGenres.length === 1 && (normGenres[0] === 'téléfilm' || normGenres[0] === 'telefilm')) {
+                // Recherche stricte Téléfilm
+                let genreId = null;
+                let cats = tagCache.categories.filter(cat => ['genre', 'genres'].includes(norm(cat.name)));
+                for (const cat of cats) {
+                    for (const tag of cat.tags) {
+                        if (norm(tag.name) === 'téléfilm' || norm(tag.name) === 'telefilm') genreId = tag.id;
+                        if (!genreId && aliases['telefilm'].some(alias => norm(tag.name) === norm(alias))) genreId = tag.id;
+                        if (genreId) break;
+                    }
+                    if (genreId) break;
+                }
+                if (genreId) tags.push(genreId);
+            } else {
+                // Pour tous les autres genres, on ne tague JAMAIS Téléfilm même si présent dans la liste
+                this.genres.forEach(genre => {
+                    const normGenre = norm(genre);
+                    if (normGenre === 'téléfilm' || normGenre === 'telefilm') return; // skip Téléfilm si d'autres genres
+                    let genreId = null;
+                    let cats = tagCache.categories.filter(cat => ['genre', 'genres'].includes(norm(cat.name)));
+                    for (const cat of cats) {
+                        for (const tag of cat.tags) {
+                            if (norm(tag.name) === normGenre) genreId = tag.id;
+                            if (!genreId && aliases[normGenre] && aliases[normGenre].some(alias => norm(tag.name) === norm(alias))) genreId = tag.id;
+                            if (genreId) break;
+                        }
+                        if (genreId) break;
+                    }
+                    if (genreId) tags.push(genreId);
+                });
+            }
+        }
+
+        // Fallback: return unique tags
+        return [...new Set(tags.filter(Boolean))];
     }
     
     /**
